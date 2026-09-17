@@ -138,6 +138,10 @@ src/
 └── shared/                  the wire contract both halves compile against
 ```
 
+**Working on this code?** Read [AGENTS.md](AGENTS.md) first — it covers the architecture rules, the
+traps that have already cost time, and how to verify a change in a real browser without disturbing a
+running server.
+
 Two decisions are worth knowing:
 
 - **The browser never touches the repository.** Every read and write is a JSON call to the Host half,

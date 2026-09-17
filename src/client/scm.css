@@ -226,8 +226,12 @@
   padding: 0 10px;
   border: none;
   border-radius: 4px 0 0 4px;
-  background: var(--dsw-alias-brand-primary);
-  color: #fff;
+  /* The brand token is the theme's *foreground* colour — near-black in the light
+   * theme, near-white in the dark one — so the label must come from the token
+   * that is defined as the foreground *of* a primary fill. Hardcoding white put
+   * white text on a near-white button in the dark theme. */
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -236,7 +240,7 @@
 }
 
 .dsh-scm-button:hover:not(:disabled) {
-  filter: brightness(1.08);
+  background: var(--dsw-alias-button-primary-hover);
 }
 
 .dsh-scm-button:disabled {
@@ -260,15 +264,15 @@
   height: 26px;
   padding: 0;
   border: none;
-  border-left: 1px solid rgb(255 255 255 / 25%);
+  border-left: 1px solid color-mix(in srgb, var(--dsw-alias-label-primary-foreground) 25%, transparent);
   border-radius: 0 4px 4px 0;
-  background: var(--dsw-alias-brand-primary);
-  color: #fff;
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
   cursor: pointer;
 }
 
 .dsh-scm-button-dropdown:hover {
-  filter: brightness(1.08);
+  background: var(--dsw-alias-button-primary-hover);
 }
 
 /* ---------- sections ---------- */
