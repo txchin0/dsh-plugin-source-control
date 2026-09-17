@@ -1,0 +1,15 @@
+# Normalize text to LF in the repository regardless of a contributor's
+# core.autocrlf setting, so the tree is identical on every platform.
+* text=auto eol=lf
+
+# Binary assets must never be line-ending translated.
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+
+# Keep lockfiles out of diffs and merge conflicts.
+pnpm-lock.yaml -diff merge=union

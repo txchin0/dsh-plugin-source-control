@@ -1,0 +1,973 @@
+/*
+ * Source Control panel styling.
+ *
+ * Sizes and spacing follow VS Code's Source Control view (22px rows, 11px left
+ * padding, 12px trailing padding, 16px status letter), expressed in the
+ * DeepSeek Harness alias tokens so the panel belongs to the column it lives in.
+ * The git decoration colours are the theme-independent defaults VS Code's git
+ * extension registers, switched per colour scheme on the panel root.
+ */
+
+.dsh-scm {
+  --dsh-scm-added: #81b88b;
+  --dsh-scm-modified: #e2c08d;
+  --dsh-scm-deleted: #c74e39;
+  --dsh-scm-renamed: #73c991;
+  --dsh-scm-untracked: #73c991;
+  --dsh-scm-ignored: #8c8c8c;
+  --dsh-scm-conflict: #e4676b;
+  --dsh-scm-stage-modified: #e2c08d;
+  --dsh-scm-stage-deleted: #c74e39;
+  --dsh-scm-hover: color-mix(in srgb, var(--dsw-alias-label-primary) 8%, transparent);
+  --dsh-scm-selected: color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, transparent);
+  --dsh-scm-border: var(--dsw-alias-border-l1);
+
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+  background: transparent;
+}
+
+.dsh-scm[data-scheme='light'] {
+  --dsh-scm-added: #587c0c;
+  --dsh-scm-modified: #895503;
+  --dsh-scm-deleted: #ad0707;
+  --dsh-scm-renamed: #007100;
+  --dsh-scm-untracked: #007100;
+  --dsh-scm-ignored: #8e8e90;
+  --dsh-scm-conflict: #ad0707;
+  --dsh-scm-stage-modified: #895503;
+  --dsh-scm-stage-deleted: #ad0707;
+}
+
+/* ---------- toolbar ---------- */
+
+.dsh-scm-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex: none;
+  padding: 0 4px 0 4px;
+  min-height: 28px;
+  border-bottom: 1px solid var(--dsh-scm-border);
+}
+
+.dsh-scm-toolbar-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+/* ---------- icon buttons ---------- */
+
+.dsh-scm-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.85;
+}
+
+.dsh-scm-action:hover:not(:disabled) {
+  background: var(--dsh-scm-hover);
+  opacity: 1;
+}
+
+.dsh-scm-action:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.dsh-scm-action .codicon {
+  font-size: 14px;
+}
+
+.dsh-scm-action--spin .codicon {
+  animation: dsh-scm-spin 1s linear infinite;
+}
+
+@keyframes dsh-scm-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- repository row ---------- */
+
+.dsh-scm-repository {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  height: 26px;
+  padding-left: 11px;
+  padding-right: 12px;
+}
+
+.dsh-scm-repository > .codicon {
+  flex: none;
+  font-size: 14px;
+  opacity: 0.85;
+}
+
+.dsh-scm-repository-name {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dsh-scm-repository-branch {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9em;
+  opacity: 0.7;
+}
+
+.dsh-scm-repository-branch .codicon {
+  font-size: 12px;
+  margin-right: 3px;
+  vertical-align: -1px;
+}
+
+/* ---------- commit input ---------- */
+
+.dsh-scm-input-row {
+  display: flex;
+  align-items: flex-start;
+  flex: none;
+  padding: 2px 12px 2px 11px;
+}
+
+.dsh-scm-editor-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.dsh-scm-editor-wrap[data-focus='true'] {
+  border-color: var(--dsw-alias-brand-primary);
+}
+
+.dsh-scm-editor {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 24px;
+  max-height: 204px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  resize: none;
+  outline: none;
+  overflow-y: auto;
+}
+
+.dsh-scm-editor::placeholder {
+  color: var(--dsw-alias-label-secondary);
+  opacity: 0.75;
+}
+
+.dsh-scm-input-toolbar {
+  position: absolute;
+  right: 1px;
+  top: 1px;
+  display: flex;
+  gap: 1px;
+}
+
+/* ---------- commit button ---------- */
+
+.dsh-scm-button-row {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 0;
+  padding: 4px 12px 6px 11px;
+}
+
+.dsh-scm-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 4px 0 0 4px;
+  background: var(--dsw-alias-brand-primary);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.dsh-scm-button:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.dsh-scm-button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.dsh-scm-button--solo {
+  border-radius: 4px;
+}
+
+.dsh-scm-button .codicon {
+  font-size: 14px;
+}
+
+.dsh-scm-button-dropdown {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-left: 1px solid rgb(255 255 255 / 25%);
+  border-radius: 0 4px 4px 0;
+  background: var(--dsw-alias-brand-primary);
+  color: #fff;
+  cursor: pointer;
+}
+
+.dsh-scm-button-dropdown:hover {
+  filter: brightness(1.08);
+}
+
+/* ---------- sections ---------- */
+
+.dsh-scm-sections {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.dsh-scm-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.dsh-scm-section[data-collapsed='true'] {
+  flex: none;
+}
+
+.dsh-scm-section-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  height: 24px;
+  padding-left: 11px;
+  padding-right: 12px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  cursor: pointer;
+  user-select: none;
+}
+
+.dsh-scm-section-header:hover {
+  background: var(--dsh-scm-hover);
+}
+
+.dsh-scm-section-header:hover .dsh-scm-actions,
+.dsh-scm-section-header:focus-within .dsh-scm-actions {
+  display: inline-flex;
+}
+
+.dsh-scm-section-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+.dsh-scm-section-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: 6px;
+}
+
+.dsh-scm-section-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 18px 16px;
+  text-align: center;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+.dsh-scm-section-state .codicon {
+  font-size: 22px;
+  opacity: 0.5;
+}
+
+.dsh-scm-divider {
+  flex: none;
+  height: 5px;
+  margin: 0;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.dsh-scm-divider:hover {
+  border-top-color: var(--dsw-alias-brand-primary);
+}
+
+/* ---------- graph ----------
+ *
+ * Ported from VS Code's scm.css graph rules. The two that carry the look are
+ * the stroke and the `:last-child` fill below: every circle is stroked in the
+ * row's background colour, and the last circle of a HEAD / incoming / outgoing
+ * node is filled with it as well. That pairing is what turns those nodes into
+ * rings — the "hollow dots" — instead of discs.
+ */
+
+.dsh-scm-graph {
+  padding-bottom: 4px;
+}
+
+.dsh-scm-commit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding-right: 12px;
+  cursor: pointer;
+  user-select: none;
+
+  /* The row's own background, which the graph strokes and fills against. */
+  --dsh-scm-graph-bg: var(--dsw-specific-sidebar-fill);
+}
+
+.dsh-scm-commit:hover,
+.dsh-scm-commit[data-expanded='true'] {
+  background: var(--dsh-scm-hover);
+  --dsh-scm-graph-bg: color-mix(in srgb, var(--dsw-alias-label-primary) 8%, var(--dsw-specific-sidebar-fill));
+}
+
+.dsh-scm-commit[data-kind='incoming-changes'],
+.dsh-scm-commit[data-kind='outgoing-changes'] {
+  cursor: default;
+}
+
+.dsh-scm-graph-container {
+  display: flex;
+  flex-shrink: 0;
+  height: 22px;
+}
+
+.dsh-scm-graph-container > svg.graph {
+  display: block;
+}
+
+.dsh-scm-graph-container > svg.graph > circle {
+  stroke: var(--dsh-scm-graph-bg);
+}
+
+.dsh-scm-graph-container.current > svg.graph > circle:last-child,
+.dsh-scm-graph-container.incoming-changes > svg.graph > circle:last-child,
+.dsh-scm-graph-container.outgoing-changes > svg.graph > circle:last-child {
+  fill: var(--dsh-scm-graph-bg);
+}
+
+/* An expanded row's last path thickens, as VS Code's does. */
+.dsh-scm-commit[data-expanded='true'] .dsh-scm-graph-container > svg.graph > path:last-of-type {
+  stroke-width: 3px;
+}
+
+.dsh-scm-commit-body {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.dsh-scm-commit-twisty {
+  flex: none;
+  font-size: 12px;
+  opacity: 0.55;
+}
+
+.dsh-scm-commit-subject {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dsh-scm-commit-date {
+  flex: none;
+  margin-left: 6px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dsh-scm-ref {
+  flex: none;
+  max-width: 46%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 15px;
+}
+
+.dsh-scm-ref[data-kind='head'] {
+  background: #3794ff;
+  color: #fff;
+}
+
+.dsh-scm-ref[data-kind='branch'] {
+  background: #3794ff33;
+  color: #3794ff;
+}
+
+.dsh-scm-ref[data-kind='remote'] {
+  background: #b180d733;
+  color: #b180d7;
+}
+
+.dsh-scm-ref[data-kind='tag'] {
+  background: #e2c08d33;
+  color: #e2c08d;
+}
+
+.dsh-scm-commit[data-kind='incoming-changes'] .dsh-scm-commit-subject,
+.dsh-scm-commit[data-kind='outgoing-changes'] .dsh-scm-commit-subject {
+  font-weight: 600;
+}
+
+.dsh-scm-commit[data-kind='incoming-changes'] .dsh-scm-commit-subject {
+  color: #b180d7;
+}
+
+.dsh-scm-commit[data-kind='outgoing-changes'] .dsh-scm-commit-subject {
+  color: #3794ff;
+}
+
+.dsh-scm-commit-file {
+  height: 22px;
+  padding-left: 0;
+}
+
+.dsh-scm-commit-file-gutter {
+  flex: none;
+  width: 12px;
+}
+
+.dsh-scm-commit-file--state {
+  display: flex;
+  align-items: center;
+  padding-left: 29px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  cursor: default;
+}
+
+.dsh-scm-commit-file--state:hover {
+  background: transparent;
+}
+
+/* ---------- groups ---------- */
+
+.dsh-scm-groups {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: 8px;
+}
+
+.dsh-scm-group-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding-left: 11px;
+  padding-right: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.dsh-scm-group-header:hover {
+  background: var(--dsh-scm-hover);
+}
+
+.dsh-scm-twisty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 16px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.dsh-scm-group-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.dsh-scm-actions {
+  display: none;
+  align-items: center;
+  gap: 1px;
+  flex: none;
+}
+
+.dsh-scm-row:hover .dsh-scm-actions,
+.dsh-scm-row:focus-within .dsh-scm-actions,
+.dsh-scm-group-header:hover .dsh-scm-actions,
+.dsh-scm-group-header:focus-within .dsh-scm-actions,
+.dsh-scm.show-actions .dsh-scm-actions {
+  display: inline-flex;
+}
+
+/* ---------- resource rows ---------- */
+
+.dsh-scm-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding-left: 11px;
+  padding-right: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.dsh-scm-row:hover {
+  background: var(--dsh-scm-hover);
+}
+
+.dsh-scm-row[data-selected='true'] {
+  background: var(--dsh-scm-selected);
+}
+
+.dsh-scm-indent {
+  flex: none;
+}
+
+.dsh-scm-row-icon {
+  flex: none;
+  width: 16px;
+  text-align: center;
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+.dsh-scm-label {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.dsh-scm-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dsh-scm-row[data-strike='true'] .dsh-scm-name {
+  text-decoration: line-through;
+}
+
+.dsh-scm-dir {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.9em;
+  opacity: 0.7;
+}
+
+.dsh-scm-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  margin-left: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.dsh-scm-badge[data-code='A'],
+.dsh-scm-badge[data-code='U'] {
+  color: var(--dsh-scm-added);
+}
+
+.dsh-scm-badge[data-code='D'] {
+  color: var(--dsh-scm-deleted);
+}
+
+.dsh-scm-badge[data-code='M'],
+.dsh-scm-badge[data-code='T'] {
+  color: var(--dsh-scm-modified);
+}
+
+.dsh-scm-badge[data-code='R'],
+.dsh-scm-badge[data-code='C'] {
+  color: var(--dsh-scm-renamed);
+}
+
+.dsh-scm-badge[data-code='!'] {
+  color: var(--dsh-scm-conflict);
+}
+
+.dsh-scm-badge[data-staged='true'][data-code='M'] {
+  color: var(--dsh-scm-stage-modified);
+}
+
+.dsh-scm-badge[data-staged='true'][data-code='D'] {
+  color: var(--dsh-scm-stage-deleted);
+}
+
+.dsh-scm-count {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 11px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 1;
+}
+
+/* ---------- states ---------- */
+
+.dsh-scm-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 1;
+  min-height: 0;
+  padding: 24px 20px;
+  text-align: center;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+.dsh-scm-state .codicon {
+  font-size: 28px;
+  opacity: 0.5;
+}
+
+.dsh-scm-output {
+  flex: none;
+  max-height: 90px;
+  overflow: auto;
+  margin: 0 12px 6px 11px;
+  padding: 5px 7px;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.dsh-scm-output[data-error='true'] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* ---------- confirm dialog ---------- */
+
+.dsh-scm-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgb(0 0 0 / 35%);
+}
+
+.dsh-scm-confirm {
+  width: 100%;
+  max-width: 320px;
+  padding: 12px 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-overlay);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 35%);
+}
+
+.dsh-scm-confirm-title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.dsh-scm-confirm-body {
+  margin: 0 0 12px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.dsh-scm-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.dsh-scm-confirm-button {
+  height: 26px;
+  padding: 0 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.dsh-scm-confirm-button:hover {
+  background: var(--dsh-scm-hover);
+}
+
+.dsh-scm-confirm-button--danger {
+  border-color: transparent;
+  background: var(--dsw-alias-state-error-primary);
+  color: #fff;
+  font-weight: 600;
+}
+
+.dsh-scm-confirm-button--danger:hover {
+  filter: brightness(1.08);
+}
+
+/* ---------- tab chip titles ---------- */
+
+.dsh-scm-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.dsh-scm-title > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dsh-scm-title .codicon {
+  flex: none;
+  font-size: 14px;
+}
+
+/* ---------- popover menu ---------- */
+
+.dsh-scm-menu-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.dsh-scm-menu {
+  position: absolute;
+  top: calc(100% + 3px);
+  z-index: 30;
+  min-width: 200px;
+  padding: 4px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-overlay);
+  box-shadow: 0 6px 22px rgb(0 0 0 / 32%);
+}
+
+.dsh-scm-menu[data-align='right'] {
+  right: 0;
+}
+
+.dsh-scm-menu[data-align='left'] {
+  left: 0;
+}
+
+.dsh-scm-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.dsh-scm-menu-item:hover:not(:disabled) {
+  background: var(--dsh-scm-hover);
+}
+
+.dsh-scm-menu-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.dsh-scm-menu-item[data-danger='true'] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.dsh-scm-menu-item .codicon {
+  font-size: 14px;
+  opacity: 0.85;
+}
+
+.dsh-scm-menu-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  flex: none;
+}
+
+.dsh-scm-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--dsw-alias-border-l1);
+}
+
+/* ---------- diff pane ---------- */
+
+.dsh-scm-diff {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--dsw-alias-bg-base);
+}
+
+.dsh-scm-diff-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: 28px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  font-size: 12px;
+  overflow: hidden;
+}
+
+.dsh-scm-diff-header .codicon {
+  flex: none;
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+.dsh-scm-diff-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.dsh-scm-diff-paths {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+}
+
+.dsh-scm-diff-editor {
+  flex: 1;
+  min-height: 0;
+}
+
+.dsh-scm-diff-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 1;
+  padding: 24px;
+  text-align: center;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
