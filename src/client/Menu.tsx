@@ -41,7 +41,20 @@ export function Menu({
   }, [onClose])
 
   return (
-    <div className="dsh-scm-menu" data-align={align} ref={ref} role="menu">
+    <div
+      className="dsh-scm-menu"
+      data-align={align}
+      ref={ref}
+      role="menu"
+      /*
+       * A menu can hang from a control that is itself clickable — the Changes
+       * pane's header folds the pane on click — so the menu swallows its own
+       * clicks. VS Code's action bar does the same on a pane header
+       * (`viewPane.ts`: `addDisposableListener(actions, EventType.CLICK, e =>
+       * e.preventDefault())`), for the same reason.
+       */
+      onClick={(event) => event.stopPropagation()}
+    >
       {items.map((item) => (
         <React.Fragment key={item.id}>
           {item.separatorBefore === true ? <div className="dsh-scm-menu-separator" /> : null}

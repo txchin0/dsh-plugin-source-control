@@ -20,3 +20,12 @@ pnpm-debug.log*
 .idea/
 .DS_Store
 Thumbs.db
+
+# Verification output — every screenshot a step script takes lands in SHOT_DIR
+# (`tools/drive.mjs`), which is set to docs/ when the README's images are being
+# refreshed. Only those two images belong in the repository; the rest of a run's
+# output, including the shots of earlier runs, are artifacts.
+docs/shots/
+docs/*.png
+!docs/panel.png
+!docs/graph.png

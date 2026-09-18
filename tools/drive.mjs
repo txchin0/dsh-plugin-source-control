@@ -20,6 +20,11 @@
  *
  *   probe(expression)        evaluate JS in the page, returning its value
  *   click({selector|text|name, within?, index?})
+ *   drag(selector, dx, dy)   real mouse drag of that element, in pixels
+ *   doubleClick(selector)    real double click on that element
+ *   hover(selector)          move the pointer onto it, without clicking
+ *   park()                   move the pointer out of the way (see below)
+ *   rect(selector)           that element's box in device-independent pixels
  *   type(text)               insert text into the focused element
  *   key(key, code, keyCode)  one key down/up pair
  *   sleep(ms)
@@ -145,7 +150,12 @@ function find(spec) {
 
 const locate = async (spec) =>
   evaluate(`(() => { ${FIND} const node = find(${JSON.stringify(spec)}); if (!node) return null;
-    node.scrollIntoView({ block: 'center' });
+    const before = node.getBoundingClientRect();
+    // Only scroll when the target is actually off screen: scrolling an element
+    // that is already visible moves every scrollable ancestor with it, which
+    // shifts the layout a check is in the middle of measuring.
+    const offScreen = before.top < 0 || before.left < 0 || before.bottom > window.innerHeight || before.right > window.innerWidth;
+    if (offScreen) node.scrollIntoView({ block: 'center' });
     const r = node.getBoundingClientRect();
     return { x: r.left + r.width / 2, y: r.top + r.height / 2, text: (node.innerText || '').trim().slice(0, 60), label: node.getAttribute('aria-label') || node.getAttribute('title') || '' }; })()`)
 
@@ -163,6 +173,65 @@ const clickAt = async (x, y) => {
   }
 }
 
+/**
+ * A real mouse drag, in steps.
+ *
+ * The moves have to be real input events rather than scripted ones: the panel
+ * captures the pointer on press, and `setPointerCapture` needs a pointer the
+ * browser considers active, which a synthesised `PointerEvent` is not.
+ */
+const dragAt = async (from, to, steps = 6) => {
+  await send('Input.dispatchMouseEvent', {
+    type: 'mousePressed',
+    x: from.x,
+    y: from.y,
+    button: 'left',
+    clickCount: 1,
+    buttons: 1,
+  })
+  for (let step = 1; step <= steps; step += 1) {
+    await send('Input.dispatchMouseEvent', {
+      type: 'mouseMoved',
+      x: from.x + ((to.x - from.x) * step) / steps,
+      y: from.y + ((to.y - from.y) * step) / steps,
+      button: 'left',
+      buttons: 1,
+    })
+  }
+  await send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased',
+    x: to.x,
+    y: to.y,
+    button: 'left',
+    clickCount: 1,
+    buttons: 0,
+  })
+}
+
+/** A real double click at a point, which is how VS Code resets a sash. */
+const doubleClickAt = async (x, y) => {
+  for (const clickCount of [1, 2]) {
+    for (const type of ['mousePressed', 'mouseReleased']) {
+      await send('Input.dispatchMouseEvent', {
+        type,
+        x,
+        y,
+        button: 'left',
+        clickCount,
+        buttons: type === 'mousePressed' ? 1 : 0,
+      })
+    }
+  }
+}
+
+const centreOf = async (selector) =>
+  evaluate(`(() => {
+    const node = document.querySelector(${JSON.stringify(selector)})
+    if (node === null) return null
+    const r = node.getBoundingClientRect()
+    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), width: r.width, height: r.height, top: r.top, bottom: r.bottom }
+  })()`)
+
 const driver = {
   evaluate,
   sleep,
@@ -172,6 +241,44 @@ const driver = {
     await clickAt(rect.x, rect.y)
     return rect
   },
+  /** Drag the element matching `selector` by a pixel offset. */
+  async drag(selector, dx, dy) {
+    const rect = await centreOf(selector)
+    if (rect === null) throw new Error(`drag: no element for ${selector}`)
+    await dragAt(rect, { x: rect.x + dx, y: rect.y + dy })
+    return rect
+  },
+  async doubleClick(selector) {
+    const rect = await centreOf(selector)
+    if (rect === null) throw new Error(`doubleClick: no element for ${selector}`)
+    await doubleClickAt(rect.x, rect.y)
+    return rect
+  },
+  /**
+   * Move the pointer onto an element without clicking it.
+   *
+   * Needed because hover can be what reveals a control: a pane header keeps its
+   * actions hidden until its pane is hovered, so a click aimed at one of those
+   * actions would otherwise land on the header behind it.
+   */
+  async hover(selector) {
+    const rect = await centreOf(selector)
+    if (rect === null) throw new Error(`hover: no element for ${selector}`)
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x, y: rect.y, buttons: 0 })
+    return rect
+  },
+  /**
+   * Move the pointer off to a corner.
+   *
+   * Hover is part of this panel's look — a pane header keeps its actions hidden
+   * until its pane is hovered — so a screenshot worth comparing has to be taken
+   * with the pointer parked somewhere harmless rather than left wherever the
+   * last click put it.
+   */
+  async park() {
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 2, buttons: 0 })
+  },
+  rect: centreOf,
   async type(text) {
     await send('Input.insertText', { text })
   },

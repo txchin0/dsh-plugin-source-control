@@ -42,12 +42,12 @@ Keep it that way; it is the only reason paths with spaces or non-ASCII work.
 | `src/host/diff.ts` | Which two revisions a comparison uses, plus language detection |
 | `src/host/actions.ts` | stage / unstage / discard / commit / push / ignore |
 | `src/client/index.ts` | Tab-type registration, slot seats, stylesheet, and the diff-opener |
-| `src/client/SourceControlBody.tsx` | The panel: toolbar, repo row, commit box, the two sections |
+| `src/client/SourceControlBody.tsx` | The panel: the two panes, their headers, the commit box, the resource groups |
 | `src/client/GraphSection.tsx` | The Graph view, driving the ported renderer |
 | `src/client/graph.ts` | **Ported from VS Code** — swimlane model + SVG renderer. Do not re-derive. |
 | `src/client/DiffBody.tsx` | The Monaco diff pane |
 | `src/client/monaco.ts` | Monaco, the Harness-derived theme, worker wiring |
-| `src/client/scm.css` | All styling, including the ported graph rules |
+| `src/client/scm.css` | All styling: the ported pane-view container *and* the ported graph rules |
 | `src/shared/protocol.ts`, `routes.ts` | The wire contract both halves compile against |
 | `build.mjs` | esbuild: host bundle, client bundle + envelope, Monaco worker |
 | `tests/graph.test.mjs` | Swimlane-model tests |
@@ -210,6 +210,42 @@ colour and no CSS fill rule, so it computes to SVG's default `fill: rgb(0,0,0)`.
 dark theme and a black dot on a light one. Fixing it is a one-line CSS rule — but it is a divergence
 from the original, so make that call knowingly.
 
+### The container is **ported** too — and its collapse rule is the whole point
+
+The panel is not "two stacked divs with a divider"; it is a port of VS Code's **pane view**
+(`base/browser/ui/splitview/paneview.ts` + `paneview.css` + `sash.css`), and its two views are the ones
+`scm.contribution.ts` registers in `workbench.view.scm`:
+
+| VS Code | Here |
+|---|---|
+| `.monaco-pane-view`'s split view | `.dsh-scm-panes` (a column; `overflow-y: auto`, because a split view whose panes cannot all fit scrolls) |
+| `.pane` + `.pane-header` + `.pane-body` | `.dsh-scm-pane` + `.dsh-scm-pane-header` + `.dsh-scm-pane-body` |
+| `.monaco-sash` | `.dsh-scm-sash`, a zero-height box whose handle is the 4px strip |
+| Changes (weight 40) + Graph (weight 40) | the two panes, half the column each before a drag |
+
+The rules that are easy to get wrong, each of which was got wrong once:
+
+- **A collapsed pane is a *range*, not a flag.** In VS Code `minimumSize === maximumSize === headerSize`
+  once a pane is collapsed, which is simultaneously what pins it to its 22px header and what stops it
+  absorbing empty space: `distributeEmptySpace` walks the panes from the **bottom up**, so the freed
+  pixels land on the expanded neighbour and the folded header ends up at the bottom of the column. The
+  version this replaced kept the sibling's own `flex-grow` share and left the freed space blank *below*
+  the folded Graph — a header floating in the middle of the column.
+- **Normalise the shares before they reach `flex-grow`.** CSS distributes only `sum(flex-grow)` of the
+  free space when that sum is **below one**, so a lone surviving pane left at `flex-grow: 0.5` takes
+  half the column and strands the rest — the exact bug above, back again, in a form that looks correct
+  in the inspector. `paneStyle()` divides by the expanded panes' total for this reason.
+- **The sash takes no layout room.** VS Code floats it over the boundary (`.sash-container` is
+  absolute), so the panes' sizes still add up to the column; it paints nothing at rest and turns into
+  `SashState.Disabled` — invisible and inert — as soon as either neighbour is collapsed.
+- **The initial split is the descriptors' `weight`s**, 40/40, so half each; a drag remembers a *share*,
+  and folding never touches it, which is how VS Code restores the size a pane had before it collapsed.
+- **Pane headers are 22px** (`--pane-header-size` / `PANE_HEADER`), and their actions belong to the
+  *pane*: revealed on `:hover` or `:focus-within` and only while expanded, never while collapsed.
+- **`overflow` stays visible** on the pane and its header, unlike `.pane`/`.pane-header` in VS Code:
+  this panel's menus are ordinary DOM inside their anchor, where VS Code's are an overlay layer, so
+  `overflow: hidden` would cut the header's dropdown off at 22px.
+
 ---
 
 ## 5. Verifying a change
@@ -249,6 +285,14 @@ the Source Control tab, and reports the panel). Copy it for a new check. Two thi
 - **`.YDXeBa_*` class names are the shipped workspace sidebar's**, not this plugin's. They change if DSH
   is updated; if a check starts failing at "expand workspace", that is why.
 
+**A cold client does not look like a warm one**, and that is what those two make fragile. Its session
+list heads with a **"New Session"** placeholder, so clicking row 0 opens nothing at all; its workspaces
+list already expanded, where a used client's are collapsed — which is why the "toggle each workspace and
+undo the toggle if rows vanished" walk *collapses* the list instead of expanding it; and its right
+column may already be open, so no reveal control exists. Pick the first row that names a session, expand
+only when nothing is on screen, and treat the reveal as best-effort — both example steps do all three:
+`tools/steps/open-panel.mjs` and `tools/steps/panel-layout.mjs`.
+
 Useful driver tricks: `click({ selector, text })` composes the two so you can pick one section header
 out of several; `probe()` runs arbitrary JS and is how you read computed styles — which is the only way
 to prove the graph's fill/stroke wiring.
@@ -259,6 +303,22 @@ dark theme is selected by nothing but `document.body`'s `data-ds-dark-theme` att
 toggle it and check both — which matters here, because a hardcoded `#fff` label is invisible in exactly
 one of the two and looks perfect in the other. `driver.shot(name, clip)` takes a rect for that reason:
 a whole-page screenshot cannot show whether a label is readable.
+
+`tools/steps/panel-layout.mjs` is the third, and it is the one that matters most for the container: it
+reads the two panes' geometry out of the DOM and asserts VS Code's rules — a folded pane is exactly its
+22px header, it ends up at the **bottom** of the column, the other pane takes every freed pixel, the
+panes always add up to the container (the sash is floated, not laid out), a drag moves both edges by the
+same pixels, a double click resets them to halves, and folding never disturbs the remembered split. It
+also opens a diff beside the panel, the pane-arranging unmount path that has taken the column down
+before. Run it with `SHOT_DIR=docs` to refresh the README's `docs/panel.png` and `docs/graph.png`; it
+also writes `docs/graph-folded.png` and `docs/panel-full.png` there, which `.gitignore` keeps out of the
+repository — the two README images are the only shots that are committed.
+
+Two driver facilities exist for that check and nothing else: `driver.drag(selector, dx, dy)` and
+`driver.doubleClick(selector)` dispatch **real** input events, because the panel captures the pointer on
+press and `setPointerCapture` needs a pointer the browser considers active — a synthesised
+`PointerEvent` is not one. `driver.park()` moves the pointer out of the way, because hover is part of
+this panel's look and a screenshot has to be of the resting state.
 
 ### Fixtures
 
@@ -295,7 +355,10 @@ Referenced screenshots live in `docs/` and are updated from real runs.
 - **Read and change, not manage.** No blame, stashes, branches/remotes/tags UI, multi-file diff editor,
   or paging past the newest 150 commits.
 - **Renames read as two rows** in a commit's file list, because the host passes `--no-renames`.
-- **One repository per session**, resolved from the session's working directory.
+- **One repository per session**, resolved from the session's working directory. That is also why the
+  panel draws no repository row: VS Code only renders one when more than one repository is visible (or
+  `scm.alwaysShowRepositories` is on), and the branch and ahead/behind counts live in the commit box's
+  placeholder and on the action button instead.
 - **List view only** — VS Code's tree view, sort keys and file-icon themes are not implemented.
 - **No file watching**: the Changes view polls every four seconds while visible; the Graph is read on
   mount, on demand, and after every write.

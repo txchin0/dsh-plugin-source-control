@@ -6,6 +6,20 @@
  * DeepSeek Harness alias tokens so the panel belongs to the column it lives in.
  * The git decoration colours are the theme-independent defaults VS Code's git
  * extension registers, switched per colour scheme on the panel root.
+ *
+ * The container is a port of VS Code's pane view too, and it is worth knowing
+ * which half of that lives where:
+ *
+ *   `.dsh-scm-panes`      `.monaco-pane-view`'s split view (a column, no sash
+ *                         space, `overflow-y: auto` because a split view whose
+ *                         panes cannot all fit scrolls)
+ *   `.dsh-scm-pane`       `.pane` — a column whose inline `flex-grow` is the
+ *                         pane's share and whose collapsed form is pinned to
+ *                         the header height (`paneStyle` in the body)
+ *   `.dsh-scm-pane-header` `.pane-header` from `paneview.css`
+ *   `.dsh-scm-pane-body`  `.pane-body` (`overflow: hidden; flex: 1`)
+ *   `.dsh-scm-sash`       `.monaco-sash` from `sash.css`, floated over the
+ *                         boundary rather than laid out between the panes
  */
 
 .dsh-scm {
@@ -21,11 +35,18 @@
   --dsh-scm-hover: color-mix(in srgb, var(--dsw-alias-label-primary) 8%, transparent);
   --dsh-scm-selected: color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, transparent);
   --dsh-scm-border: var(--dsw-alias-border-l1);
+  /* VS Code's `sash.hoverBorder`, which its default themes resolve to the focus
+   * border. DSH's accent that plays that part is the state-business blue. */
+  --dsh-scm-sash-hover: var(--dsw-alias-state-business-primary);
+  /* `--pane-header-size`, kept in sync with `PANE_HEADER` in the body. */
+  --dsh-scm-pane-header: 22px;
 
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  /* The confirmation dialog is absolutely positioned against the panel. */
+  position: relative;
   font-size: 13px;
   color: var(--dsw-alias-label-primary);
   background: transparent;
@@ -43,29 +64,159 @@
   --dsh-scm-stage-deleted: #ad0707;
 }
 
-/* ---------- toolbar ---------- */
+/* ---------- pane view ---------- */
 
-.dsh-scm-toolbar {
+.dsh-scm-panes {
+  position: relative;
   display: flex;
-  align-items: center;
-  gap: 1px;
-  flex: none;
-  padding: 0 4px 0 4px;
-  min-height: 28px;
-  border-bottom: 1px solid var(--dsh-scm-border);
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  /* A split view whose panes are all at their minimum scrolls rather than
+   * squeezing them, which is what `.monaco-split-view2` does. */
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
-.dsh-scm-toolbar-title {
-  flex: 1;
+.dsh-scm-pane {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  /* Not `hidden`, which is what `.pane` uses: this panel's menus are real DOM
+   * inside their anchor rather than an overlay layer as VS Code's are, so a
+   * clipped pane would cut the header's dropdown off at 22px. */
+  overflow: visible;
+}
+
+/* ---------- pane header ---------- */
+
+.dsh-scm-pane-header {
+  display: flex;
+  align-items: center;
+  flex: none;
+  box-sizing: border-box;
+  height: var(--dsh-scm-pane-header);
+  line-height: var(--dsh-scm-pane-header);
+  overflow: visible;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* The first pane draws no boundary above it, exactly as
+ * `.monaco-pane-view .split-view-view:first-of-type > .pane > .pane-header` has
+ * no border. The second pane's header is the line between the two views. */
+.dsh-scm-pane:not(:first-child) > .dsh-scm-pane-header {
+  border-top: 1px solid var(--dsh-scm-border);
+}
+
+.dsh-scm-pane-header:hover {
+  background: var(--dsh-scm-hover);
+}
+
+/* The twisty is the header's first `.codicon`, so VS Code's rules for it are
+ * written that way: `margin: 0 2px`, nudged 1px down while expanded. */
+.dsh-scm-pane-header > .codicon:first-of-type {
+  margin: 0 2px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.dsh-scm-pane-header[data-expanded='true'] > .codicon:first-of-type {
+  transform: translateY(1px);
+}
+
+.dsh-scm-pane-title {
+  margin: 0;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font: inherit;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  opacity: 0.7;
+  opacity: 0.8;
+}
+
+/* Actions belong to the pane, not to its header: VS Code reveals them while the
+ * pane is hovered or focused *and* expanded, and never while it is collapsed. */
+.dsh-scm-pane-header > .dsh-scm-actions {
+  display: none;
+  margin-left: auto;
+  margin-right: 8px;
+}
+
+.dsh-scm-pane:hover > .dsh-scm-pane-header[data-expanded='true'] > .dsh-scm-actions,
+.dsh-scm-pane:focus-within > .dsh-scm-pane-header[data-expanded='true'] > .dsh-scm-actions,
+.dsh-scm-pane-header[data-expanded='true']:focus > .dsh-scm-actions {
+  display: inline-flex;
+}
+
+.dsh-scm-pane-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.dsh-scm-pane-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* ---------- sash ---------- */
+
+/* Zero height on purpose: VS Code's sash is absolutely positioned and centred on
+ * the boundary, so it overlaps the two panes instead of taking a row of its own.
+ * The handle is what the pointer actually lands on. */
+.dsh-scm-sash {
+  position: relative;
+  z-index: 35;
+  flex: none;
+  height: 0;
+  pointer-events: none;
+}
+
+.dsh-scm-sash-handle {
+  position: absolute;
+  top: -2px;
+  left: 0;
+  right: 0;
+  height: 4px;
+  cursor: ns-resize;
+  touch-action: none;
+  pointer-events: auto;
+  background: transparent;
+  transition: background-color 0.1s ease-out;
+  transition-delay: 0s;
+}
+
+/* `workbench.sash.hoverDelay` is 300ms in VS Code; the delay rides on the hover
+ * state so the fade back out is immediate, as it is there. */
+.dsh-scm-sash-handle:hover {
+  background: var(--dsh-scm-sash-hover);
+  transition-delay: 0.3s;
+}
+
+.dsh-scm-sash-handle:active {
+  background: var(--dsh-scm-sash-hover);
+  transition-delay: 0s;
+}
+
+/* A sash with a collapsed neighbour is disabled there, and since it paints
+ * nothing at rest, disabled means invisible. */
+.dsh-scm-sash[data-disabled='true'] > .dsh-scm-sash-handle {
+  pointer-events: none;
+  cursor: default;
+  background: transparent;
 }
 
 /* ---------- icon buttons ---------- */
@@ -108,47 +259,6 @@
   to {
     transform: rotate(360deg);
   }
-}
-
-/* ---------- repository row ---------- */
-
-.dsh-scm-repository {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  flex: none;
-  height: 26px;
-  padding-left: 11px;
-  padding-right: 12px;
-}
-
-.dsh-scm-repository > .codicon {
-  flex: none;
-  font-size: 14px;
-  opacity: 0.85;
-}
-
-.dsh-scm-repository-name {
-  font-weight: 700;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dsh-scm-repository-branch {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.9em;
-  opacity: 0.7;
-}
-
-.dsh-scm-repository-branch .codicon {
-  font-size: 12px;
-  margin-right: 3px;
-  vertical-align: -1px;
 }
 
 /* ---------- commit input ---------- */
@@ -195,14 +305,6 @@
 .dsh-scm-editor::placeholder {
   color: var(--dsw-alias-label-secondary);
   opacity: 0.75;
-}
-
-.dsh-scm-input-toolbar {
-  position: absolute;
-  right: 1px;
-  top: 1px;
-  display: flex;
-  gap: 1px;
 }
 
 /* ---------- commit button ---------- */
@@ -256,6 +358,25 @@
   font-size: 14px;
 }
 
+/* git's short label: the ahead/behind counts sit on the button itself. */
+.dsh-scm-button-counts {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 2px;
+  font-weight: 400;
+}
+
+.dsh-scm-button-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.dsh-scm-button-count .codicon {
+  font-size: small;
+}
+
 .dsh-scm-button-dropdown {
   display: inline-flex;
   align-items: center;
@@ -275,69 +396,7 @@
   background: var(--dsw-alias-button-primary-hover);
 }
 
-/* ---------- sections ---------- */
-
-.dsh-scm-sections {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
-
-.dsh-scm-section {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.dsh-scm-section[data-collapsed='true'] {
-  flex: none;
-}
-
-.dsh-scm-section-header {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex: none;
-  height: 24px;
-  padding-left: 11px;
-  padding-right: 12px;
-  border-top: 1px solid var(--dsw-alias-border-l1);
-  cursor: pointer;
-  user-select: none;
-}
-
-.dsh-scm-section-header:hover {
-  background: var(--dsh-scm-hover);
-}
-
-.dsh-scm-section-header:hover .dsh-scm-actions,
-.dsh-scm-section-header:focus-within .dsh-scm-actions {
-  display: inline-flex;
-}
-
-.dsh-scm-section-title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  opacity: 0.8;
-}
-
-.dsh-scm-section-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding-bottom: 6px;
-}
-
-.dsh-scm-section-state {
+.dsh-scm-pane-state {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -349,22 +408,9 @@
   font-size: 12px;
 }
 
-.dsh-scm-section-state .codicon {
+.dsh-scm-pane-state .codicon {
   font-size: 22px;
   opacity: 0.5;
-}
-
-.dsh-scm-divider {
-  flex: none;
-  height: 5px;
-  margin: 0;
-  border-top: 1px solid var(--dsw-alias-border-l2);
-  cursor: row-resize;
-  touch-action: none;
-}
-
-.dsh-scm-divider:hover {
-  border-top-color: var(--dsw-alias-brand-primary);
 }
 
 /* ---------- graph ----------
@@ -530,11 +576,7 @@
 /* ---------- groups ---------- */
 
 .dsh-scm-groups {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding-bottom: 8px;
+  padding-bottom: 6px;
 }
 
 .dsh-scm-group-header {
@@ -605,10 +647,6 @@
 
 .dsh-scm-row[data-selected='true'] {
   background: var(--dsh-scm-selected);
-}
-
-.dsh-scm-indent {
-  flex: none;
 }
 
 .dsh-scm-row-icon {

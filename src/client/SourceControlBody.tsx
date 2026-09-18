@@ -43,6 +43,68 @@ interface Confirmation {
 /** How often the panel re-reads the repository while it is on screen. */
 const POLL_MS = 4000
 
+/**
+ * One pane header's height, in pixels.
+ *
+ * `DEFAULT_PANE_HEADER_SIZE` in VS Code's `paneview.ts`; the stylesheet's
+ * `--pane-header-size` is kept in sync with it there, and so is `.dsh-scm`'s.
+ * A collapsed pane is pinned to exactly this size — that is the whole of VS
+ * Code's collapse mechanism (see `paneStyle`).
+ */
+const PANE_HEADER = 22
+
+/** `Pane`'s default `minimumBodySize` for a vertical pane, in pixels. */
+const PANE_MIN_BODY = 120
+
+/**
+ * The share of the pane view the Changes pane takes before it is first dragged.
+ *
+ * VS Code lays a fresh container out from the view descriptors' `weight`s —
+ * Changes is 40 and Graph is 40 (`scm.contribution.ts`) — so the two panes start
+ * at half the column each.
+ */
+const INITIAL_RATIO = 0.5
+
+/** Which pane a fold applies to. */
+type PaneId = 'changes' | 'graph'
+
+/**
+ * The flex box one pane needs to reproduce VS Code's split-view sizing.
+ *
+ * VS Code sizes panes in pixels and expresses a collapsed pane as a *range*
+ * rather than a flag: `minimumSize === maximumSize === headerSize`
+ * (`Pane.minimumSize`/`maximumSize` in `paneview.ts`). That single equality is
+ * what pins the pane to its header, stops it absorbing the space its neighbour
+ * gave up, and pushes the freed space onto the pane above or below it —
+ * `distributeEmptySpace` walks the panes from the bottom up, so an expanded
+ * neighbour grows and a collapsed one is left at 22px.
+ *
+ * `flex-grow` proportional to the panes' stored shares reproduces the expanded
+ * half of that exactly, and it reproduces the collapse for free: with only one
+ * growable pane left, that pane takes every freed pixel and the collapsed one
+ * ends up last — at the bottom of the column.
+ *
+ * The shares are divided by the expanded panes' total before they reach
+ * `flex-grow`, and that is not cosmetic: CSS distributes only `sum(flex-grow)` of
+ * the free space when that sum is *below one*, so a lone growable pane left at
+ * `0.5` would take half the column and strand the rest as a blank gap under the
+ * collapsed header — the exact symptom this port was written to remove.
+ * @param share - the pane's share of the two panes' combined size.
+ * @param expanded - whether the pane is expanded.
+ * @param total - the shares of the expanded panes, added up.
+ * @returns the inline style for the pane element.
+ */
+function paneStyle(share: number, expanded: boolean, total: number): React.CSSProperties {
+  return expanded
+    ? {
+        flexGrow: total > 0 ? share / total : 1,
+        flexShrink: 1,
+        flexBasis: 0,
+        minHeight: PANE_HEADER + PANE_MIN_BODY,
+      }
+    : { flexGrow: 0, flexShrink: 0, flexBasis: 'auto', minHeight: PANE_HEADER, maxHeight: PANE_HEADER }
+}
+
 /** Sum every group's resources. */
 function totalOf(status: ScmStatus): number {
   return status.groups.reduce((sum, group) => sum + group.resources.length, 0)
@@ -51,6 +113,56 @@ function totalOf(status: ScmStatus): number {
 /** The codicon shown for one group's twisty. */
 function twistyFor(collapsed: boolean): string {
   return collapsed ? 'chevron-right' : 'chevron-down'
+}
+
+/**
+ * One pane header, as VS Code's `.pane-header` behaves.
+ *
+ * The twisty is a chevron which the stylesheet nudges down a pixel while the
+ * pane is expanded; the title is uppercased by the stylesheet; and the actions
+ * are revealed by the *pane's* hover, never by the header's own — VS Code shows
+ * them only while the pane is expanded, which is what `data-expanded` is for.
+ * Enter and Space toggle, Left collapses and Right expands, exactly as
+ * `PaneView`'s header keydown handlers do.
+ */
+function PaneHeader({
+  title,
+  expanded,
+  onToggle,
+  children,
+}: {
+  title: string
+  expanded: boolean
+  onToggle: () => void
+  children?: React.ReactNode
+}): React.ReactElement {
+  return (
+    <div
+      className="dsh-scm-pane-header"
+      data-expanded={expanded ? 'true' : 'false'}
+      role="button"
+      tabIndex={0}
+      aria-expanded={expanded}
+      aria-label={`${title} Section`}
+      onClick={onToggle}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onToggle()
+        } else if (event.key === 'ArrowLeft' && expanded) {
+          event.preventDefault()
+          onToggle()
+        } else if (event.key === 'ArrowRight' && !expanded) {
+          event.preventDefault()
+          onToggle()
+        }
+      }}
+    >
+      <i className={`codicon codicon-${expanded ? 'chevron-down' : 'chevron-right'}`} />
+      <h3 className="dsh-scm-pane-title">{title}</h3>
+      <span className="dsh-scm-actions">{children}</span>
+    </div>
+  )
 }
 
 /** One file row. */
@@ -293,21 +405,24 @@ export function SourceControlBody(props: SourceControlBodyProps): React.ReactEle
   const [confirming, setConfirming] = React.useState<Confirmation | null>(null)
 
   // The Graph view's own state: its history, the files of an expanded commit,
-  // and the share of the body the two sections take.
+  // and the share of the pane view each of the two panes takes.
   const [history, setHistory] = React.useState<ScmHistory | null>(null)
   const [historyFailure, setHistoryFailure] = React.useState('')
   const [historyLoading, setHistoryLoading] = React.useState(true)
   const [historyNow, setHistoryNow] = React.useState(0)
   const [expanded, setExpanded] = React.useState('')
   const [commitFiles, setCommitFiles] = React.useState<Record<string, ScmCommitFile[] | 'loading'>>({})
-  const [sections, setSections] = React.useState({ changes: false, graph: false })
-  const [ratio, setRatio] = React.useState(0.58)
+  // Folding is per pane and never touches `ratio`: VS Code remembers the pixel
+  // size a pane had before it was collapsed and restores it on expand, so a
+  // split the user dragged is still there afterwards.
+  const [folded, setFolded] = React.useState<Record<PaneId, boolean>>({ changes: false, graph: false })
+  const [ratio, setRatio] = React.useState(INITIAL_RATIO)
 
   const alive = React.useRef(true)
   const sequence = React.useRef(0)
   const historySequence = React.useRef(0)
   const editorRef = React.useRef<HTMLTextAreaElement | null>(null)
-  const sectionsRef = React.useRef<HTMLDivElement | null>(null)
+  const panesRef = React.useRef<HTMLDivElement | null>(null)
   const drag = React.useRef<{ startY: number; startRatio: number; height: number } | null>(null)
 
   React.useEffect(() => {
@@ -479,28 +594,60 @@ export function SourceControlBody(props: SourceControlBodyProps): React.ReactEle
     [openDiff, paneId, sessionId, tabId],
   )
 
-  const onDividerDown = (event: React.PointerEvent<HTMLDivElement>): void => {
-    const container = sectionsRef.current
+  /** Fold or unfold one pane. The other pane takes the space either way. */
+  const togglePane = React.useCallback((pane: PaneId): void => {
+    setFolded((current) => ({ ...current, [pane]: !current[pane] }))
+  }, [])
+
+  /**
+   * Start a sash drag.
+   *
+   * The sash takes no room of its own — VS Code floats it over the boundary —
+   * so the two panes' sizes add up to the container's height and the ratio is
+   * all that has to be remembered.
+   */
+  const onSashDown = (event: React.PointerEvent<HTMLDivElement>): void => {
+    const container = panesRef.current
     if (container === null) return
     const height = container.getBoundingClientRect().height
     if (height <= 0) return
     drag.current = { startY: event.clientY, startRatio: ratio, height }
-    event.currentTarget.setPointerCapture(event.pointerId)
-  }
-
-  const onDividerMove = (event: React.PointerEvent<HTMLDivElement>): void => {
-    const current = drag.current
-    if (current === null) return
-    const next = current.startRatio + (event.clientY - current.startY) / current.height
-    setRatio(Math.min(0.85, Math.max(0.15, next)))
-  }
-
-  const onDividerUp = (event: React.PointerEvent<HTMLDivElement>): void => {
-    drag.current = null
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId)
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+      // A pointer the browser does not consider active cannot be captured; the
+      // drag still works, it just does not survive leaving the element.
     }
   }
+
+  /**
+   * Drag the boundary: the pane above the sash grows, the one below shrinks,
+   * and each stops at its minimum — `header + minimumBodySize`, which is
+   * `SplitView.resize`'s clamp. Below two minimums the column scrolls, as VS
+   * Code's split view does.
+   */
+  const onSashMove = (event: React.PointerEvent<HTMLDivElement>): void => {
+    const current = drag.current
+    if (current === null) return
+    const wanted = current.startRatio * current.height + (event.clientY - current.startY)
+    const least = PANE_HEADER + PANE_MIN_BODY
+    const most = Math.max(least, current.height - least)
+    setRatio(Math.min(most, Math.max(least, wanted)) / current.height)
+  }
+
+  const onSashUp = (event: React.PointerEvent<HTMLDivElement>): void => {
+    drag.current = null
+    try {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      }
+    } catch {
+      // Releasing a capture that was never taken is not worth a word.
+    }
+  }
+
+  /** Double-clicking the sash gives the two panes half the column each. */
+  const onSashReset = (): void => setRatio(INITIAL_RATIO)
 
   const confirmDiscard = React.useCallback(
     (paths: string[], untracked: string[], all: boolean): void => {
@@ -536,12 +683,6 @@ export function SourceControlBody(props: SourceControlBodyProps): React.ReactEle
   if (failure !== '') {
     return (
       <div className="dsh-scm" data-scheme={schemeAttribute}>
-        <div className="dsh-scm-toolbar">
-          <span className="dsh-scm-toolbar-title">Source Control</span>
-          <button type="button" className="dsh-scm-action" title="Refresh" onClick={() => void refresh()}>
-            <i className="codicon codicon-refresh" />
-          </button>
-        </div>
         <div className="dsh-scm-state">
           <i className="codicon codicon-warning" />
           <span>{failure}</span>
@@ -563,9 +704,28 @@ export function SourceControlBody(props: SourceControlBodyProps): React.ReactEle
   const merging = status.groups.some((group) => group.id === 'merge' && group.resources.length > 0)
   const hasUpstream = status.upstream !== null
   const needsSync = status.ahead > 0 || status.behind > 0
+  // The labels and their order are git's action button, verbatim: Continue while
+  // a merge is in progress, Publish Branch while the branch has no upstream,
+  // Sync Changes while it is ahead or behind, and Commit otherwise — each with
+  // the icon git puts in the same place (`extensions/git/src/actionButton.ts`,
+  // `postCommitCommands.ts`).
   const primaryLabel = merging ? 'Continue' : !hasUpstream ? 'Publish Branch' : needsSync ? 'Sync Changes' : 'Commit'
   const primaryIcon = merging ? 'check' : !hasUpstream ? 'cloud-upload' : needsSync ? 'sync' : 'check'
   const primaryAction = merging ? 'commit' : !hasUpstream ? 'push' : needsSync ? 'pull' : 'commit'
+  const branch = status.branch ?? ''
+  // git's tooltips: the commit one names the branch, the sync one counts what it
+  // would move, and a detached HEAD drops the branch clause.
+  const primaryTitle = merging
+    ? 'Continue Merge'
+    : !hasUpstream
+      ? branch === ''
+        ? 'Publish Branch'
+        : `Publish Branch "${branch}"`
+      : needsSync
+        ? `${status.behind > 0 ? `Pull ${status.behind}` : ''}${status.behind > 0 && status.ahead > 0 ? ' and ' : ''}${status.ahead > 0 ? `push ${status.ahead}` : ''} commit${status.behind + status.ahead === 1 ? '' : 's'}`
+        : branch === ''
+          ? 'Commit Changes'
+          : `Commit Changes on "${branch}"`
   const canCommit = total > 0 && !busyNow
 
   const toolbarMenu: MenuItem[] = [
@@ -600,6 +760,13 @@ export function SourceControlBody(props: SourceControlBodyProps): React.ReactEle
       disabled: total === 0 || busyNow,
       run: () => void perform({ action: 'unstageAll' }),
     },
+    {
+      id: 'discard-all',
+      label: 'Discard All Changes',
+      icon: 'discard',
+      disabled: total === 0 || busyNow,
+      run: () => confirmDiscard(['.'], ['.'], true),
+    },
   ]
 
   const commitMenu: MenuItem[] = [
@@ -627,253 +794,234 @@ export function SourceControlBody(props: SourceControlBodyProps): React.ReactEle
     else void perform({ action: 'pull' })
   }
 
+  // What the expanded panes' shares add up to, which is what `flex-grow` has to
+  // be normalised against — see `paneStyle`. A folded pane contributes nothing,
+  // so the pane left standing takes the column on its own.
+  const expandedShare = (folded.changes ? 0 : ratio) + (folded.graph ? 0 : 1 - ratio)
+
   return (
     <div className="dsh-scm" data-scheme={schemeAttribute}>
-      <div className="dsh-scm-toolbar">
-        <span className="dsh-scm-toolbar-title">Source Control</span>
-        <button
-          type="button"
-          className={`dsh-scm-action${busyNow ? ' dsh-scm-action--spin' : ''}`}
-          title="Refresh"
-          onClick={() => void refresh()}
+      <div className="dsh-scm-panes" ref={panesRef}>
+        {/*
+          Two panes, exactly as VS Code's SCM view container holds them: the
+          Changes view (the commit box, its button, and the resource groups) and
+          the Graph below it. Each carries its own header — which is where VS
+          Code puts the view's actions, and why the panel has no toolbar of its
+          own: the container's title area is the tab strip above this body, and
+          VS Code contributes no actions to it for Source Control.
+        */}
+        <div
+          className="dsh-scm-pane"
+          data-view="changes"
+          data-expanded={folded.changes ? 'false' : 'true'}
+          style={paneStyle(ratio, !folded.changes, expandedShare)}
         >
-          <i className="codicon codicon-refresh" />
-        </button>
-        <button
-          type="button"
-          className="dsh-scm-action"
-          title="Stage All Changes"
-          disabled={total === 0 || busyNow}
-          onClick={() => void perform({ action: 'stageAll' })}
-        >
-          <i className="codicon codicon-add" />
-        </button>
-        <button
-          type="button"
-          className="dsh-scm-action"
-          title="Unstage All Changes"
-          disabled={total === 0 || busyNow}
-          onClick={() => void perform({ action: 'unstageAll' })}
-        >
-          <i className="codicon codicon-remove" />
-        </button>
-        <button
-          type="button"
-          className="dsh-scm-action"
-          title="Discard All Changes"
-          disabled={total === 0 || busyNow}
-          onClick={() => confirmDiscard(['.'], ['.'], true)}
-        >
-          <i className="codicon codicon-discard" />
-        </button>
-        <MenuAnchor open={menu === 'toolbar'}>
-          <button
-            type="button"
-            className="dsh-scm-action"
-            title="More Actions…"
-            onClick={() => setMenu(menu === 'toolbar' ? '' : 'toolbar')}
-          >
-            <i className="codicon codicon-ellipsis" />
-          </button>
-          {menu === 'toolbar' ? <Menu items={toolbarMenu} onClose={() => setMenu('')} /> : null}
-        </MenuAnchor>
-      </div>
-
-      <div className="dsh-scm-repository" title={status.root}>
-        <i className="codicon codicon-repo" />
-        <span className="dsh-scm-repository-name">{status.name}</span>
-        <span className="dsh-scm-repository-branch">
-          {status.detached ? (
-            'detached HEAD'
-          ) : (
-            <>
-              <i className="codicon codicon-git-branch" />
-              {status.branch ?? 'HEAD'}
-              {status.ahead > 0 ? ` ↑${status.ahead}` : ''}
-              {status.behind > 0 ? ` ↓${status.behind}` : ''}
-            </>
-          )}
-        </span>
-        <span className="dsh-scm-count">{total}</span>
-      </div>
-
-      <div className="dsh-scm-input-row">
-        <div className="dsh-scm-editor-wrap">
-          <textarea
-            ref={editorRef}
-            className="dsh-scm-editor"
-            value={message}
-            spellCheck={false}
-            rows={1}
-            placeholder={`Message (Ctrl+Enter to commit on "${status.branch ?? 'HEAD'}")`}
-            aria-label="Source Control Input"
-            onChange={(event) => setMessage(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-                event.preventDefault()
-                void perform({ action: 'commit', message })
-              }
-            }}
-          />
-        </div>
-      </div>
-
-      <div className="dsh-scm-button-row">
-        <button
-          type="button"
-          className={`dsh-scm-button${merging || !hasUpstream || needsSync ? ' dsh-scm-button--solo' : ''}`}
-          title={primaryLabel}
-          disabled={primaryAction === 'commit' ? !canCommit : busyNow}
-          onClick={runPrimary}
-        >
-          <i className={`codicon codicon-${busyNow && primaryAction === 'commit' ? 'sync' : primaryIcon}`} />
-          {primaryLabel}
-        </button>
-        {merging || !hasUpstream || needsSync ? null : (
-          <MenuAnchor open={menu === 'commit'}>
+          <PaneHeader title="Changes" expanded={!folded.changes} onToggle={() => togglePane('changes')}>
             <button
               type="button"
-              className="dsh-scm-button-dropdown"
-              title="More Actions…"
-              onClick={() => setMenu(menu === 'commit' ? '' : 'commit')}
+              className={`dsh-scm-action${busyNow ? ' dsh-scm-action--spin' : ''}`}
+              title="Refresh"
+              onClick={(event) => {
+                event.stopPropagation()
+                void refresh()
+              }}
             >
-              <i className="codicon codicon-chevron-down" />
+              <i className="codicon codicon-refresh" />
             </button>
-            {menu === 'commit' ? <Menu items={commitMenu} onClose={() => setMenu('')} /> : null}
-          </MenuAnchor>
-        )}
-      </div>
+            <MenuAnchor open={menu === 'toolbar'}>
+              <button
+                type="button"
+                className="dsh-scm-action"
+                title="More Actions…"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  setMenu(menu === 'toolbar' ? '' : 'toolbar')
+                }}
+              >
+                <i className="codicon codicon-ellipsis" />
+              </button>
+              {menu === 'toolbar' ? <Menu items={toolbarMenu} onClose={() => setMenu('')} /> : null}
+            </MenuAnchor>
+          </PaneHeader>
 
-      {output !== null ? (
-        <div className="dsh-scm-output" data-error={output.error ? 'true' : undefined}>
-          {output.text}
-        </div>
-      ) : null}
-
-      <div className="dsh-scm-sections" ref={sectionsRef}>
-        <div
-          className="dsh-scm-section"
-          data-collapsed={sections.changes ? 'true' : undefined}
-          style={{ flexGrow: sections.changes ? 0 : ratio, flexBasis: sections.changes ? 'auto' : 0 }}
-        >
-          <div
-            className="dsh-scm-section-header"
-            role="button"
-            tabIndex={0}
-            onClick={() => setSections((current) => ({ ...current, changes: !current.changes }))}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault()
-                setSections((current) => ({ ...current, changes: !current.changes }))
-              }
-            }}
-          >
-            <i className={`codicon codicon-${sections.changes ? 'chevron-right' : 'chevron-down'} dsh-scm-twisty`} />
-            <span className="dsh-scm-section-title">Changes</span>
-            <span className="dsh-scm-count">{total}</span>
-          </div>
-          {sections.changes ? null : (
-            <div className="dsh-scm-section-body" role="tree">
-              {total === 0 ? (
-                <div className="dsh-scm-section-state">
-                  <i className="codicon codicon-check" />
-                  <span>No changes. Your working tree is clean.</span>
+          {folded.changes ? null : (
+            <div className="dsh-scm-pane-body">
+              <div className="dsh-scm-pane-scroll">
+                <div className="dsh-scm-input-row">
+                  <div className="dsh-scm-editor-wrap">
+                    <textarea
+                      ref={editorRef}
+                      className="dsh-scm-editor"
+                      value={message}
+                      spellCheck={false}
+                      rows={1}
+                      /* git's placeholder: the branch clause goes away on a
+                       * detached HEAD, exactly as `repository.ts` drops it. */
+                      placeholder={
+                        branch === ''
+                          ? 'Message (Ctrl+Enter to commit)'
+                          : `Message (Ctrl+Enter to commit on "${branch}")`
+                      }
+                      aria-label="Source Control Input"
+                      onChange={(event) => setMessage(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                          event.preventDefault()
+                          void perform({ action: 'commit', message })
+                        }
+                      }}
+                    />
+                  </div>
                 </div>
-              ) : (
-                status.groups.map((group) => (
-                  <GroupSection
-                    key={group.id}
-                    group={group}
-                    collapsed={collapsed[group.id] === true}
-                    selected={selected}
-                    busy={busyNow}
-                    onToggle={() => setCollapsed((current) => ({ ...current, [group.id]: current[group.id] !== true }))}
-                    onOpen={open}
-                    onStage={(resource) => void perform({ action: 'stage', paths: [resource.path] })}
-                    onUnstage={(resource) => void perform({ action: 'unstage', paths: [resource.path] })}
-                    onDiscard={(resource) =>
-                      confirmDiscard(
-                        resource.group === 'untracked' ? [] : [resource.path],
-                        resource.group === 'untracked' ? [resource.path] : [],
-                        false,
-                      )
-                    }
-                    onIgnore={(resource) => void perform({ action: 'ignore', paths: [resource.path] })}
-                    onGroupStage={() => void perform({ action: 'stage', paths: group.resources.map((r) => r.path) })}
-                    onGroupUnstage={() => void perform({ action: 'unstage', paths: group.resources.map((r) => r.path) })}
-                    onGroupDiscard={() =>
-                      confirmDiscard(
-                        group.resources.filter((r) => r.group !== 'untracked').map((r) => r.path),
-                        group.resources.filter((r) => r.group === 'untracked').map((r) => r.path),
-                        false,
-                      )
-                    }
-                  />
-                ))
-              )}
+
+                <div className="dsh-scm-button-row">
+                  <button
+                    type="button"
+                    className={`dsh-scm-button${merging || !hasUpstream || needsSync ? ' dsh-scm-button--solo' : ''}`}
+                    title={primaryTitle}
+                    disabled={primaryAction === 'commit' ? !canCommit : busyNow}
+                    onClick={runPrimary}
+                  >
+                    <i className={`codicon codicon-${busyNow && primaryAction === 'commit' ? 'sync' : primaryIcon}`} />
+                    {primaryLabel}
+                    {/* git's short label: the counts ride on the button, behind
+                     * first, so the branch row VS Code does not draw is not
+                     * needed to see them. */}
+                    {needsSync ? (
+                      <span className="dsh-scm-button-counts">
+                        {status.behind > 0 ? (
+                          <span className="dsh-scm-button-count">
+                            {status.behind}
+                            <i className="codicon codicon-arrow-down" />
+                          </span>
+                        ) : null}
+                        {status.ahead > 0 ? (
+                          <span className="dsh-scm-button-count">
+                            {status.ahead}
+                            <i className="codicon codicon-arrow-up" />
+                          </span>
+                        ) : null}
+                      </span>
+                    ) : null}
+                  </button>
+                  {merging || !hasUpstream || needsSync ? null : (
+                    <MenuAnchor open={menu === 'commit'}>
+                      <button
+                        type="button"
+                        className="dsh-scm-button-dropdown"
+                        title="More Actions…"
+                        onClick={() => setMenu(menu === 'commit' ? '' : 'commit')}
+                      >
+                        <i className="codicon codicon-chevron-down" />
+                      </button>
+                      {menu === 'commit' ? <Menu items={commitMenu} onClose={() => setMenu('')} /> : null}
+                    </MenuAnchor>
+                  )}
+                </div>
+
+                {output !== null ? (
+                  <div className="dsh-scm-output" data-error={output.error ? 'true' : undefined}>
+                    {output.text}
+                  </div>
+                ) : null}
+
+                <div className="dsh-scm-groups" role="tree">
+                  {total === 0 ? (
+                    <div className="dsh-scm-pane-state">
+                      <i className="codicon codicon-check" />
+                      <span>No changes. Your working tree is clean.</span>
+                    </div>
+                  ) : (
+                    status.groups.map((group) => (
+                      <GroupSection
+                        key={group.id}
+                        group={group}
+                        collapsed={collapsed[group.id] === true}
+                        selected={selected}
+                        busy={busyNow}
+                        onToggle={() => setCollapsed((current) => ({ ...current, [group.id]: current[group.id] !== true }))}
+                        onOpen={open}
+                        onStage={(resource) => void perform({ action: 'stage', paths: [resource.path] })}
+                        onUnstage={(resource) => void perform({ action: 'unstage', paths: [resource.path] })}
+                        onDiscard={(resource) =>
+                          confirmDiscard(
+                            resource.group === 'untracked' ? [] : [resource.path],
+                            resource.group === 'untracked' ? [resource.path] : [],
+                            false,
+                          )
+                        }
+                        onIgnore={(resource) => void perform({ action: 'ignore', paths: [resource.path] })}
+                        onGroupStage={() => void perform({ action: 'stage', paths: group.resources.map((r) => r.path) })}
+                        onGroupUnstage={() => void perform({ action: 'unstage', paths: group.resources.map((r) => r.path) })}
+                        onGroupDiscard={() =>
+                          confirmDiscard(
+                            group.resources.filter((r) => r.group !== 'untracked').map((r) => r.path),
+                            group.resources.filter((r) => r.group === 'untracked').map((r) => r.path),
+                            false,
+                          )
+                        }
+                      />
+                    ))
+                  )}
+                </div>
+              </div>
             </div>
           )}
         </div>
 
-        {sections.changes || sections.graph ? null : (
-          <div
-            className="dsh-scm-divider"
-            role="separator"
-            aria-orientation="horizontal"
-            title="Drag to resize"
-            onPointerDown={onDividerDown}
-            onPointerMove={onDividerMove}
-            onPointerUp={onDividerUp}
-            onPointerCancel={onDividerUp}
-          />
-        )}
+        {/*
+          The sash takes no layout room at all: VS Code floats it over the
+          boundary between two panes (`.sash-container` is `position: absolute`),
+          so the panes' sizes still add up to the column. It is inert — and so
+          invisible, since it paints nothing at rest — as soon as either
+          neighbour is collapsed, which is what `SashState.Disabled` means there.
+        */}
+        <div
+          className="dsh-scm-sash"
+          data-disabled={folded.changes || folded.graph ? 'true' : undefined}
+          onPointerDown={onSashDown}
+          onPointerMove={onSashMove}
+          onPointerUp={onSashUp}
+          onPointerCancel={onSashUp}
+          onDoubleClick={onSashReset}
+        >
+          <div className="dsh-scm-sash-handle" role="separator" aria-orientation="horizontal" title="Drag to resize" />
+        </div>
 
         <div
-          className="dsh-scm-section"
-          data-collapsed={sections.graph ? 'true' : undefined}
-          style={{ flexGrow: sections.graph ? 0 : 1 - ratio, flexBasis: sections.graph ? 'auto' : 0 }}
+          className="dsh-scm-pane"
+          data-view="graph"
+          data-expanded={folded.graph ? 'false' : 'true'}
+          style={paneStyle(1 - ratio, !folded.graph, expandedShare)}
         >
-          <div
-            className="dsh-scm-section-header"
-            role="button"
-            tabIndex={0}
-            onClick={() => setSections((current) => ({ ...current, graph: !current.graph }))}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault()
-                setSections((current) => ({ ...current, graph: !current.graph }))
-              }
-            }}
-          >
-            <i className={`codicon codicon-${sections.graph ? 'chevron-right' : 'chevron-down'} dsh-scm-twisty`} />
-            <span className="dsh-scm-section-title">Graph</span>
-            <span className="dsh-scm-actions">
-              <button
-                type="button"
-                className="dsh-scm-action"
-                title="Refresh Graph"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  void refreshHistory()
-                }}
-              >
-                <i className="codicon codicon-refresh" />
-              </button>
-            </span>
-            <span className="dsh-scm-count">{history === null ? 0 : history.commits.length}</span>
-          </div>
-          {sections.graph ? null : (
-            <div className="dsh-scm-section-body">
-              <GraphSection
-                history={history}
-                now={historyNow}
-                loading={historyLoading}
-                failure={historyFailure}
-                expanded={expanded}
-                files={commitFiles}
-                onToggle={toggleCommit}
-                onOpenFile={openCommitFile}
-              />
+          <PaneHeader title="Graph" expanded={!folded.graph} onToggle={() => togglePane('graph')}>
+            <button
+              type="button"
+              className={`dsh-scm-action${historyLoading ? ' dsh-scm-action--spin' : ''}`}
+              title="Refresh"
+              onClick={(event) => {
+                event.stopPropagation()
+                void refreshHistory()
+              }}
+            >
+              <i className="codicon codicon-refresh" />
+            </button>
+          </PaneHeader>
+
+          {folded.graph ? null : (
+            <div className="dsh-scm-pane-body">
+              <div className="dsh-scm-pane-scroll">
+                <GraphSection
+                  history={history}
+                  now={historyNow}
+                  loading={historyLoading}
+                  failure={historyFailure}
+                  expanded={expanded}
+                  files={commitFiles}
+                  onToggle={toggleCommit}
+                  onOpenFile={openCommitFile}
+                />
+              </div>
             </div>
           )}
         </div>

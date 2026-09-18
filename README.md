@@ -64,8 +64,18 @@ The Host half is loaded at startup, so a restart (not just a page reload) is wha
 
 ## What the panel does
 
-The tab holds VS Code's two Source Control views stacked, each collapsible from its own header, with a
-draggable divider between them. Collapse one and the other takes the whole column.
+The tab is VS Code's Source Control **view container**: two panes — **Changes** on top and **Graph**
+below — each with the same 22px `.pane-header` VS Code gives a view, and the same sash floated over the
+boundary between them. Fold either pane from its header and the other takes the whole column: a folded
+pane is pinned to its header, exactly as `Pane.minimumSize === Pane.maximumSize === headerSize` pins it
+in VS Code, so the folded Graph ends up at the *bottom* of the column rather than above a blank gap.
+Drag the sash to move the boundary, or double-click it to give the two panes half the column each.
+
+There is no separate toolbar and no repository row, because VS Code draws neither: the container's title
+area is the tab strip above this panel (and Source Control contributes no actions to it), and with a
+single repository the Changes view is the commit box, its button, and the resource groups. The branch
+lives in the commit box's placeholder and the ahead/behind counts ride on the button, where git's action
+button puts them.
 
 **Changes** follows VS Code's git provider: `Merge Changes`, `Staged Changes`, `Changes`, and (under
 `untrackedChanges: separate`) `Untracked Changes`. A file changed on both sides appears once per side,
@@ -74,9 +84,12 @@ VS Code's own git decoration colours — `M` modified, `A` added, `D` deleted (s
 renamed, `C` copied, `U` untracked, `T` type changed, `!` conflicted.
 
 **Actions.** Per file: Open Changes, Discard Changes, Stage Changes, Unstage Changes, Add to
-`.gitignore` for untracked files. Per group: Stage All, Unstage All, Discard All. Per panel: Refresh,
-Fetch, Pull, Push, Collapse All, Expand All. The commit box commits on `Ctrl+Enter`, and the button
-becomes Publish Branch or Sync Changes when the branch has no upstream or is ahead/behind.
+`.gitignore` for untracked files. Per group: Stage All, Unstage All, Discard All. Per pane: Refresh and
+More Actions (Fetch, Pull, Push, Collapse All, Expand All, Stage All, Unstage All, Discard All) — in the
+Changes header, where VS Code puts them, revealed while that pane is hovered. The commit box commits on
+`Ctrl+Enter`, and the button becomes Continue, Publish Branch or Sync Changes with git's own labels and
+icons — including the ahead/behind counts — when a merge is in progress, the branch has no upstream, or
+it is ahead or behind its upstream.
 
 Discarding always asks first — it reverts tracked edits and deletes untracked files, and the
 repository cannot undo it.
@@ -129,7 +142,7 @@ src/
 │   └── actions.ts           stage / unstage / discard / commit / push / ignore
 ├── client/
 │   ├── index.ts             tab types, seats, style installation, the diff-opener
-│   ├── SourceControlBody.tsx  the panel: both views, its sections, and the commit box
+│   ├── SourceControlBody.tsx  the panel: the two panes, their headers, and the commit box
 │   ├── GraphSection.tsx       the Graph view
 │   ├── graph.ts               VS Code's swimlane model + SVG renderer, ported (unit-tested)
 │   ├── DiffBody.tsx           the Monaco diff pane
@@ -160,6 +173,9 @@ Two decisions are worth knowing:
   a deletion plus an addition; each half still opens a correct diff.
 - **A single repository per session**, resolved from the session's working directory.
 - **List view only.** VS Code's tree view, its sort keys, and its file-icon themes are not implemented.
+- **No repository row.** VS Code only draws one with more than one repository (or
+  `scm.alwaysShowRepositories`), and this panel has exactly one repository per session; the branch and
+  the ahead/behind counts are shown where VS Code shows them instead.
 - **No file watching.** The Changes view re-reads the repository every four seconds while it is on
   screen; the Graph is read on mount, on demand, and after every write.
 - **No untracked-directory deletion toggle.** Discard All passes `-d` to `git clean`, as VS Code does.

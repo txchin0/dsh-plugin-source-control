@@ -31,30 +31,51 @@ export default async function run(driver) {
     if (!(await step(name, action))) failures.push(name)
   }
 
-  // Only expanded workspaces list their sessions. Expand every collapsed one by
-  // toggling and undoing the toggle when a click closed something instead.
+  // Only expanded workspaces list their sessions, and a fresh client's list
+  // opens its workspaces already expanded where a used one's are collapsed —
+  // which is why this only clicks when nothing is on screen. A toggle-by-toggle
+  // walk would collapse the list it was trying to read.
   await check('expand workspaces', async () => {
-    const rows = () => driver.probe(`document.querySelectorAll('.YDXeBa_sessionRow').length`)
+    const VISIBLE_ROWS = `[...document.querySelectorAll('.YDXeBa_sessionRow')].filter((n) => n.offsetParent !== null && n.getBoundingClientRect().width > 0).length`
+    const already = await driver.probe(VISIBLE_ROWS)
+    if (already > 0) return already
     const workspaces = await driver.probe(`document.querySelectorAll('.YDXeBa_projectRow').length`)
     for (let index = 0; index < workspaces; index += 1) {
-      const before = await rows()
       await driver.click({ selector: '.YDXeBa_projectRow', index })
-      await driver.sleep(700)
-      if ((await rows()) < before) {
-        await driver.click({ selector: '.YDXeBa_projectRow', index })
-        await driver.sleep(700)
-      }
+      await driver.sleep(800)
     }
-    return rows()
+    const rows = await driver.probe(VISIBLE_ROWS)
+    if (rows === 0) throw new Error('no session rows became visible')
+    return rows
   })
 
-  await check('open session', () => driver.click({ selector: '.YDXeBa_sessionRow', index: sessionIndex }))
+  // The first row is a "New Session" placeholder whenever no conversation is
+  // open yet, and clicking it opens nothing, so the wanted index counts only
+  // over the rows that actually name a session.
+  const rowIndex = await driver.probe(`(() => {
+    const visible = (node) => node.offsetParent !== null && node.getBoundingClientRect().width > 0
+    const rows = [...document.querySelectorAll('.YDXeBa_sessionRow')].filter(visible)
+    const real = rows.filter((node) => (node.innerText || '').trim().toLowerCase() !== 'new session')
+    const wanted = real[${sessionIndex}]
+    return wanted === undefined ? -1 : rows.indexOf(wanted)
+  })()`)
+  if (rowIndex < 0) throw new Error(`no session row at index ${sessionIndex}`)
+  await check('open session', () => driver.click({ selector: '.YDXeBa_sessionRow', index: rowIndex }))
   await driver.sleep(4000)
 
   // A fresh session's right column starts collapsed; the reveal control is in
   // the conversation header's corner, which exists only once a session is open.
-  await check('reveal right sidebar', () => driver.click({ name: 'Open right sidebar' }))
-  await driver.sleep(2500)
+  // A client that starts with the column already open has no such control, so
+  // this is best-effort rather than a check.
+  await step('reveal right sidebar', async () => {
+    try {
+      await driver.click({ name: 'Open right sidebar' })
+      await driver.sleep(2500)
+      return 'revealed'
+    } catch {
+      return 'already open'
+    }
+  })
 
   await check('open Source Control', () => driver.click({ text: 'Source Control', within: RIGHT }))
   await driver.sleep(3500)
@@ -66,12 +87,10 @@ export default async function run(driver) {
     }
     return {
       present: true,
-      repo: (node.querySelector('.dsh-scm-repository-name') || {}).innerText,
-      branch: (node.querySelector('.dsh-scm-repository-branch') || {}).innerText,
-      sections: [...node.querySelectorAll('.dsh-scm-section')].map((section) => ({
-        title: (section.querySelector('.dsh-scm-section-title') || {}).innerText,
-        count: (section.querySelector('.dsh-scm-count') || {}).innerText,
-        collapsed: section.getAttribute('data-collapsed') === 'true',
+      panes: [...node.querySelectorAll('.dsh-scm-pane')].map((pane) => ({
+        view: pane.getAttribute('data-view'),
+        title: (pane.querySelector('.dsh-scm-pane-title') || {}).innerText,
+        expanded: pane.getAttribute('data-expanded') === 'true',
       })),
       changeRows: node.querySelectorAll('.dsh-scm-group .dsh-scm-row').length,
       commitRows: node.querySelectorAll('.dsh-scm-commit').length,

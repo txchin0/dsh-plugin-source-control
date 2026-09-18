@@ -148,7 +148,7 @@ export function GraphSection({
 
   if (failure !== '') {
     return (
-      <div className="dsh-scm-section-state">
+      <div className="dsh-scm-pane-state">
         <i className="codicon codicon-warning" />
         <span>{failure}</span>
       </div>
@@ -156,12 +156,12 @@ export function GraphSection({
   }
 
   if (history === null) {
-    return <div className="dsh-scm-section-state">{loading ? 'Reading history…' : 'No history.'}</div>
+    return <div className="dsh-scm-pane-state">{loading ? 'Reading history…' : 'No history.'}</div>
   }
 
   if (viewModels.length === 0) {
     return (
-      <div className="dsh-scm-section-state">
+      <div className="dsh-scm-pane-state">
         <i className="codicon codicon-git-commit" />
         <span>This repository has no commits yet.</span>
       </div>
