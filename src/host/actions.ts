@@ -51,17 +51,107 @@ async function discard(
   return results
 }
 
-/** Push, publishing the branch on its first push when it has no upstream yet. */
+/** The checked-out branch and the upstream it tracks. */
+interface Branch {
+  /** The local branch name, e.g. `main`. */
+  name: string
+  /** The remote its upstream lives on, e.g. `origin`. */
+  remote: string
+  /** The branch name on that remote, e.g. `main`. */
+  upstream: string
+}
+
+/**
+ * Read the checked-out branch and its upstream.
+ *
+ * VS Code has this in its repository state; this half is stateless, so it is read
+ * back from the configuration git wrote when the branch started tracking.
+ * @param git - the runner.
+ * @param root - the working-tree root.
+ * @returns the branch, or `undefined` on a detached HEAD or an untracked branch.
+ */
+async function readBranch(git: GitRunner, root: string): Promise<Branch | undefined> {
+  const name = (await git.tryText(root, ['rev-parse', '--abbrev-ref', 'HEAD']))?.trim()
+  if (name === undefined || name === '' || name === 'HEAD') return undefined
+  const remote = (await git.tryText(root, ['config', '--get', `branch.${name}.remote`]))?.trim()
+  const merge = (await git.tryText(root, ['config', '--get', `branch.${name}.merge`]))?.trim()
+  if (remote === undefined || remote === '' || merge === undefined || merge === '') return undefined
+  return { name, remote, upstream: merge.replace(/^refs\/heads\//, '') }
+}
+
+/** The remote a publish would go to: VS Code asks when there is more than one. */
+async function firstRemote(git: GitRunner, root: string): Promise<string | undefined> {
+  const listed = (await git.tryText(root, ['remote']))?.split('\n').map((line) => line.trim())
+  return listed?.find((line) => line !== '')
+}
+
+/**
+ * Push the checked-out branch, exactly as VS Code's git extension does it.
+ *
+ * With an upstream the refspec is spelled out — `git push origin main:main` — so
+ * the push does not depend on `push.default`; without one it is a plain
+ * `git push`, which is what `git.push` runs and which git refuses, there being
+ * no upstream to push to. Publishing is a separate action for that case.
+ * @param git - the runner.
+ * @param root - the working-tree root.
+ * @returns the finished invocation.
+ */
 async function push(git: GitRunner, root: string): Promise<GitResult> {
-  const first = await git.run(root, ['push'])
-  if (first.exitCode === 0) return first
+  const branch = await readBranch(git, root)
+  if (branch === undefined) return git.run(root, ['push'])
+  return git.run(root, ['push', branch.remote, `${branch.name}:${branch.upstream}`])
+}
+
+/**
+ * Publish the checked-out branch: `git push --set-upstream <remote> <branch>`.
+ *
+ * VS Code's `git.publish` uses the only remote when there is one and asks which
+ * one when there are several; a panel has nowhere to ask, so it takes the first
+ * and spells the command out either way.
+ */
+async function publish(git: GitRunner, root: string): Promise<GitResult> {
   const branch = (await git.tryText(root, ['rev-parse', '--abbrev-ref', 'HEAD']))?.trim()
-  const remote = (await git.tryText(root, ['remote']))?.split('\n')[0]?.trim()
-  if (branch === undefined || branch === '' || branch === 'HEAD' || remote === undefined || remote === '') {
-    return first
+  const remote = await firstRemote(git, root)
+  if (branch === undefined || branch === '' || branch === 'HEAD' || remote === undefined) {
+    return git.run(root, ['push'])
   }
-  const published = await git.run(root, ['push', '--set-upstream', remote, branch])
-  return published.exitCode === 0 ? published : first
+  return git.run(root, ['push', '--set-upstream', remote, branch])
+}
+
+/** How many commits the branch is ahead of its upstream, or `undefined` if unknown. */
+async function aheadOf(git: GitRunner, root: string): Promise<number | undefined> {
+  const counted = await git.tryText(root, ['rev-list', '--count', '@{upstream}..HEAD'])
+  const count = counted === undefined ? Number.NaN : Number.parseInt(counted.trim(), 10)
+  return Number.isNaN(count) ? undefined : count
+}
+
+/**
+ * VS Code's `git.sync`: pull the upstream, then push the branch if it is ahead.
+ *
+ * The order and the abort matter. `Repository._sync` pulls first and lets a
+ * failed pull throw, so nothing is pushed on top of a merge that did not happen;
+ * and it decides whether to push *after* the pull, from the refreshed count, so a
+ * branch that was only behind comes back without a pointless push. An unknown
+ * count pushes, as `shouldPush` defaults to true there.
+ * @param git - the runner.
+ * @param root - the working-tree root.
+ * @returns the combined outcome of the pull and the push.
+ */
+async function sync(git: GitRunner, root: string): Promise<ScmActionResult> {
+  const branch = await readBranch(git, root)
+  // `git.sync` on a branch with no upstream just pushes, which is what VS Code's
+  // command does before it ever reaches the pull.
+  if (branch === undefined) return combine([await git.run(root, ['push'])])
+  const pulled = await git.run(root, ['pull', branch.remote, branch.upstream])
+  if (pulled.exitCode !== 0) return combine([pulled])
+  if ((await aheadOf(git, root)) === 0) return combine([pulled])
+  return combine([pulled, await push(git, root)])
+}
+
+/** Pull the upstream, naming it explicitly as VS Code's `git.pull` does. */
+async function pull(git: GitRunner, root: string): Promise<GitResult> {
+  const branch = await readBranch(git, root)
+  return git.run(root, branch === undefined ? ['pull'] : ['pull', branch.remote, branch.upstream])
 }
 
 /** Append paths to the repository's `.gitignore`, keeping the existing content. */
@@ -139,8 +229,12 @@ export async function runAction(
       return commit(git, root, request)
     case 'push':
       return combine([await push(git, root)])
+    case 'publish':
+      return combine([await publish(git, root)])
     case 'pull':
-      return combine([await git.run(root, ['pull'])])
+      return combine([await pull(git, root)])
+    case 'sync':
+      return sync(git, root)
     case 'fetch':
       return combine([await git.run(root, ['fetch', '--all', '--prune'])])
   }

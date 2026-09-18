@@ -105,7 +105,9 @@ export type ScmActionName =
   | 'commitAmend'
   | 'commitAndPush'
   | 'push'
+  | 'publish'
   | 'pull'
+  | 'sync'
   | 'fetch'
 
 /** One action request. */

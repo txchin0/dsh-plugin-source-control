@@ -704,25 +704,36 @@ export function SourceControlBody(props: SourceControlBodyProps): React.ReactEle
   const merging = status.groups.some((group) => group.id === 'merge' && group.resources.length > 0)
   const hasUpstream = status.upstream !== null
   const needsSync = status.ahead > 0 || status.behind > 0
-  // The labels and their order are git's action button, verbatim: Continue while
-  // a merge is in progress, Publish Branch while the branch has no upstream,
-  // Sync Changes while it is ahead or behind, and Commit otherwise — each with
-  // the icon git puts in the same place (`extensions/git/src/actionButton.ts`,
-  // `postCommitCommands.ts`).
-  const primaryLabel = merging ? 'Continue' : !hasUpstream ? 'Publish Branch' : needsSync ? 'Sync Changes' : 'Commit'
-  const primaryIcon = merging ? 'check' : !hasUpstream ? 'cloud-upload' : needsSync ? 'sync' : 'check'
-  const primaryAction = merging ? 'commit' : !hasUpstream ? 'push' : needsSync ? 'pull' : 'commit'
+  // git's action button, priority and all (`extensions/git/src/actionButton.ts`):
+  // changes to commit win the button, then a branch with no upstream offers
+  // Publish, then a branch out of step with its upstream offers Sync, and
+  // otherwise it is Commit, disabled. The labels, icons and order are git's too.
+  const primary: 'commit' | 'publish' | 'sync' =
+    total > 0 ? 'commit' : !hasUpstream ? 'publish' : needsSync ? 'sync' : 'commit'
+  const primaryLabel =
+    merging ? 'Continue' : primary === 'publish' ? 'Publish Branch' : primary === 'sync' ? 'Sync Changes' : 'Commit'
+  const primaryIcon = merging ? 'check' : primary === 'publish' ? 'cloud-upload' : primary === 'sync' ? 'sync' : 'check'
   const branch = status.branch ?? ''
-  // git's tooltips: the commit one names the branch, the sync one counts what it
-  // would move, and a detached HEAD drops the branch clause.
+  // git's tooltips, wording and all: the commit one names the branch, the sync one
+  // counts what it would move and says which side it moves from
+  // (`extensions/git/src/repository.ts`, `syncTooltip`), and a detached HEAD drops
+  // the branch clause.
+  const syncTitle =
+    status.upstream === null || (status.ahead === 0 && status.behind === 0)
+      ? 'Synchronize Changes'
+      : status.ahead === 0
+        ? `Pull ${status.behind} commits from ${status.upstream}`
+        : status.behind === 0
+          ? `Push ${status.ahead} commits to ${status.upstream}`
+          : `Pull ${status.behind} and push ${status.ahead} commits between ${status.upstream}`
   const primaryTitle = merging
     ? 'Continue Merge'
-    : !hasUpstream
+    : primary === 'publish'
       ? branch === ''
         ? 'Publish Branch'
         : `Publish Branch "${branch}"`
-      : needsSync
-        ? `${status.behind > 0 ? `Pull ${status.behind}` : ''}${status.behind > 0 && status.ahead > 0 ? ' and ' : ''}${status.ahead > 0 ? `push ${status.ahead}` : ''} commit${status.behind + status.ahead === 1 ? '' : 's'}`
+      : primary === 'sync'
+        ? syncTitle
         : branch === ''
           ? 'Commit Changes'
           : `Commit Changes on "${branch}"`
@@ -732,6 +743,7 @@ export function SourceControlBody(props: SourceControlBodyProps): React.ReactEle
     { id: 'fetch', label: 'Fetch', icon: 'cloud-download', run: () => void perform({ action: 'fetch' }) },
     { id: 'pull', label: 'Pull', icon: 'arrow-down', run: () => void perform({ action: 'pull' }) },
     { id: 'push', label: 'Push', icon: 'arrow-up', run: () => void perform({ action: 'push' }) },
+    { id: 'sync', label: 'Sync Changes', icon: 'sync', run: () => void perform({ action: 'sync' }) },
     {
       id: 'collapse',
       label: 'Collapse All',
@@ -789,9 +801,9 @@ export function SourceControlBody(props: SourceControlBodyProps): React.ReactEle
   ]
 
   const runPrimary = (): void => {
-    if (primaryAction === 'commit') void perform({ action: 'commit', message })
-    else if (primaryAction === 'push') void perform({ action: 'push' })
-    else void perform({ action: 'pull' })
+    if (merging || primary === 'commit') void perform({ action: 'commit', message })
+    else if (primary === 'publish') void perform({ action: 'publish' })
+    else void perform({ action: 'sync' })
   }
 
   // What the expanded panes' shares add up to, which is what `flex-grow` has to
@@ -877,17 +889,21 @@ export function SourceControlBody(props: SourceControlBodyProps): React.ReactEle
                 <div className="dsh-scm-button-row">
                   <button
                     type="button"
-                    className={`dsh-scm-button${merging || !hasUpstream || needsSync ? ' dsh-scm-button--solo' : ''}`}
+                    className={`dsh-scm-button${primary === 'publish' || primary === 'sync' || merging ? ' dsh-scm-button--solo' : ''}`}
+                    data-busy={busyNow ? 'true' : undefined}
                     title={primaryTitle}
-                    disabled={primaryAction === 'commit' ? !canCommit : busyNow}
+                    disabled={primary === 'commit' ? !canCommit : busyNow}
                     onClick={runPrimary}
                   >
-                    <i className={`codicon codicon-${busyNow && primaryAction === 'commit' ? 'sync' : primaryIcon}`} />
+                    {/* git spins the icon while the remote work is in flight:
+                     * `$(sync~spin)`, which is what these icons become. */}
+                    <i className={`codicon codicon-${busyNow ? 'sync' : primaryIcon}`} />
                     {primaryLabel}
-                    {/* git's short label: the counts ride on the button, behind
-                     * first, so the branch row VS Code does not draw is not
-                     * needed to see them. */}
-                    {needsSync ? (
+                    {/* git's short label, and the only place it draws them: the
+                     * counts ride on the Sync button, behind first. A branch that
+                     * is out of step while it has changes to commit shows the
+                     * Commit button instead, exactly as git's button does. */}
+                    {primary === 'sync' ? (
                       <span className="dsh-scm-button-counts">
                         {status.behind > 0 ? (
                           <span className="dsh-scm-button-count">
@@ -904,7 +920,7 @@ export function SourceControlBody(props: SourceControlBodyProps): React.ReactEle
                       </span>
                     ) : null}
                   </button>
-                  {merging || !hasUpstream || needsSync ? null : (
+                  {merging || primary !== 'commit' ? null : (
                     <MenuAnchor open={menu === 'commit'}>
                       <button
                         type="button"

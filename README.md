@@ -85,11 +85,15 @@ renamed, `C` copied, `U` untracked, `T` type changed, `!` conflicted.
 
 **Actions.** Per file: Open Changes, Discard Changes, Stage Changes, Unstage Changes, Add to
 `.gitignore` for untracked files. Per group: Stage All, Unstage All, Discard All. Per pane: Refresh and
-More Actions (Fetch, Pull, Push, Collapse All, Expand All, Stage All, Unstage All, Discard All) — in the
-Changes header, where VS Code puts them, revealed while that pane is hovered. The commit box commits on
-`Ctrl+Enter`, and the button becomes Continue, Publish Branch or Sync Changes with git's own labels and
-icons — including the ahead/behind counts — when a merge is in progress, the branch has no upstream, or
-it is ahead or behind its upstream.
+More Actions (Fetch, Pull, Push, Sync Changes, Collapse All, Expand All, Stage All, Unstage All,
+Discard All) — in the Changes header, where VS Code puts them, revealed while that pane is hovered.
+
+The commit box commits on `Ctrl+Enter`, and the one button above it is git's action button, with git's
+own labels, icons and priority: changes to commit win it (**Commit**, or **Continue** during a merge),
+then a branch with no upstream offers **Publish Branch** (`git push --set-upstream <remote> <branch>`),
+then a branch out of step with its upstream offers **Sync Changes** — which is a real sync, a pull
+**and then** a push, with the ahead/behind counts on the button — and otherwise it is Commit, disabled.
+The tooltips are git's too, down to the wording of the sync one.
 
 Discarding always asks first — it reverts tracked edits and deletes untracked files, and the
 repository cannot undo it.

@@ -354,6 +354,12 @@
   border-radius: 4px;
 }
 
+/* git's `$(sync~spin)`: the icon turns while a fetch, pull, push or sync is in
+ * flight. */
+.dsh-scm-button[data-busy='true'] .codicon {
+  animation: dsh-scm-spin 1s linear infinite;
+}
+
 .dsh-scm-button .codicon {
   font-size: 14px;
 }

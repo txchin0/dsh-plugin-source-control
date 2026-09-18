@@ -40,7 +40,7 @@ Keep it that way; it is the only reason paths with spaces or non-ASCII work.
 | `src/host/status.ts` | `git status --porcelain=v1 -z` parsing and group assembly |
 | `src/host/history.ts` | `git log` / `git show --name-status` parsing |
 | `src/host/diff.ts` | Which two revisions a comparison uses, plus language detection |
-| `src/host/actions.ts` | stage / unstage / discard / commit / push / ignore |
+| `src/host/actions.ts` | stage / unstage / discard / commit / push / publish / pull / sync / ignore |
 | `src/client/index.ts` | Tab-type registration, slot seats, stylesheet, and the diff-opener |
 | `src/client/SourceControlBody.tsx` | The panel: the two panes, their headers, the commit box, the resource groups |
 | `src/client/GraphSection.tsx` | The Graph view, driving the ported renderer |
@@ -51,6 +51,7 @@ Keep it that way; it is the only reason paths with spaces or non-ASCII work.
 | `src/shared/protocol.ts`, `routes.ts` | The wire contract both halves compile against |
 | `build.mjs` | esbuild: host bundle, client bundle + envelope, Monaco worker |
 | `tests/graph.test.mjs` | Swimlane-model tests |
+| `tests/actions.test.mjs` | Host action tests: recorded argv, plus a throwaway repository with a bare remote |
 | `tools/drive.mjs` | CDP browser-verification harness (§5) |
 
 ---
@@ -61,7 +62,7 @@ Keep it that way; it is the only reason paths with spaces or non-ASCII work.
 pnpm install          # also runs the build (the `prepare` script)
 pnpm build            # lib/index.js, lib/client.js, lib/monaco-editor.worker.js
 pnpm typecheck        # tsc --noEmit; must stay clean
-pnpm test             # swimlane-model tests
+pnpm test             # swimlane model + host action tests
 ```
 
 Install into a profile and activate:
@@ -246,6 +247,29 @@ The rules that are easy to get wrong, each of which was got wrong once:
   this panel's menus are ordinary DOM inside their anchor, where VS Code's are an overlay layer, so
   `overflow: hidden` would cut the header's dropdown off at 22px.
 
+### git's actions come in pairs — read them out of the extension, do not guess
+
+The panel's button is git's action button, and git's actions are not one command each:
+
+- **`git.sync` is a pull *and then* a push** (`Repository._sync`): pull the upstream, let a failed pull
+  throw so nothing is pushed on top of a merge that did not happen, then decide from the *refreshed*
+  ahead count whether to push at all, and push with the refspec spelled out —
+  `git push origin main:main`, which does not depend on `push.default`.
+- **`git.publish` is `git push --set-upstream <remote> <branch>`** — not a bare push that is retried.
+- **`git.push` with no upstream is a plain `git push`**, which git refuses; publishing is the action for
+  that state, and the button offers it.
+- **The button's priority is `actionButton.ts`'s `get button()`**: changes to commit win it, then
+  publish, then sync, then a disabled commit. A branch that is both ahead and dirty shows **Commit**.
+
+The bug this rule was written from: the panel mapped "Sync Changes" to `pull`, so the button pulled and
+never pushed, and nothing on screen said so. `tests/actions.test.mjs` pins the sequences (including the
+abort after a failed pull), the fixture cases in the same file prove the effect against a real bare
+remote, and `tools/steps/action-mapping.mjs` pins which action each button label asks for.
+
+One divergence, knowingly: VS Code skips the push of a sync when the remote is read-only, and asks
+before a destructive sync (`git.confirmSync`); this half can do neither, and `git.rebaseWhenSync` is not
+implemented either — a sync merges.
+
 ---
 
 ## 5. Verifying a change
@@ -319,6 +343,14 @@ Two driver facilities exist for that check and nothing else: `driver.drag(select
 press and `setPointerCapture` needs a pointer the browser considers active — a synthesised
 `PointerEvent` is not one. `driver.park()` moves the pointer out of the way, because hover is part of
 this panel's look and a screenshot has to be of the resting state.
+
+`tools/steps/action-mapping.mjs` is the fourth, and it exists because a button that does half its job
+looks exactly like one that does all of it. It never lets a request reach the Host half: it replaces
+`window.fetch` with a stub answering the panel's three calls from synthetic repository states, so each
+face of the button — Continue, Publish Branch, Sync Changes, Commit — can be produced on demand and
+each click is *recorded* rather than run. That is how "Sync Changes asks for `sync`" is asserted without
+committing or pushing anything in the repository the session happens to be on. Anything that must prove
+the git effect itself belongs in `tests/actions.test.mjs`, against a throwaway repository.
 
 ### Fixtures
 
