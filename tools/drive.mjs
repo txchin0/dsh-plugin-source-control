@@ -312,12 +312,23 @@ await send('Page.navigate', { url })
 await sleep(Number(settleMs))
 
 const steps = await import(`file://${path.resolve(stepsFile).replace(/\\/g, '/')}`)
-const report = await steps.default(driver)
-
-console.log(JSON.stringify(report, null, 2))
+let report
+let failure
+try {
+  report = await steps.default(driver)
+} catch (error) {
+  // A failed run is exactly when the page events are worth reading, so the
+  // steps' error is held back until they have been printed.
+  failure = error
+}
+console.log(JSON.stringify(report ?? null, null, 2))
 if (events.length > 0) {
   console.error(`--- page events (${events.length}) ---`)
   for (const line of events.slice(-25)) console.error(line)
+  process.exitCode = 1
+}
+if (failure !== undefined) {
+  console.error(failure.stack ?? String(failure))
   process.exitCode = 1
 }
 

@@ -10,6 +10,7 @@
 import * as monaco from 'monaco-editor/esm/vs/editor/edcore.main.js'
 import 'monaco-editor/esm/vs/basic-languages/monaco.contribution.js'
 import { ROUTE_PREFIX } from '../shared/routes.ts'
+import { toThemeColor } from './themeColor.ts'
 
 export { monaco }
 
@@ -25,10 +26,21 @@ scope.MonacoEnvironment = {
 /** Theme ids already defined, so the palette is read from the page only once. */
 const defined = new Set<string>()
 
-/** Read one alias token from the page, falling back when it is not defined. */
+/**
+ * Read one alias token from the page.
+ *
+ * The token is a CSS colour as the page computes it, and a Monaco theme can only
+ * hold `#RRGGBB`/`#RRGGBBAA` — the light theme's `--dsw-alias-bg-base` is `#fff`,
+ * which is legal CSS and illegal theme data. So the value is flattened here, and
+ * a token that is unset, or a colour Monaco cannot read, takes the built-in
+ * default rather than taking the theme — and the pane with it — down.
+ * @param name - the `--dsw-*` custom property to read.
+ * @param fallback - the colour to use when the token is unset or unusable.
+ * @returns a `#RRGGBB`/`#RRGGBBAA` colour.
+ */
 function token(name: string, fallback: string): string {
   const value = getComputedStyle(document.body).getPropertyValue(name).trim()
-  return value === '' ? fallback : value
+  return toThemeColor(value) ?? fallback
 }
 
 /**

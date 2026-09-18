@@ -50,6 +50,7 @@ Keep it that way; it is the only reason paths with spaces or non-ASCII work.
 | `src/client/FileIcon.tsx` | The icon element both row kinds render |
 | `src/client/DiffBody.tsx` | The Monaco diff pane |
 | `src/client/monaco.ts` | Monaco, the Harness-derived theme, worker wiring |
+| `src/client/themeColor.ts` | A CSS colour flattened into the hex form Monaco theme data accepts |
 | `src/client/scm.css` | All styling: the ported pane-view container *and* the ported graph rules |
 | `src/shared/protocol.ts`, `routes.ts` | The wire contract both halves compile against |
 | `assets/fileicons/` | The lifted Seti theme, its font, the language table, and `NOTICE` |
@@ -57,6 +58,7 @@ Keep it that way; it is the only reason paths with spaces or non-ASCII work.
 | `tests/graph.test.mjs` | Swimlane-model tests |
 | `tests/fileicons.test.mjs` | File-icon cascade tests |
 | `tests/actions.test.mjs` | Host action tests: recorded argv, plus a throwaway repository with a bare remote |
+| `tests/theme-color.test.mjs` | The CSS-colour → Monaco-theme-colour contract |
 | `tools/drive.mjs` | CDP browser-verification harness (§5) |
 | `tools/import-file-icons.mjs` | Re-lifts the Seti theme from a VS Code checkout; `--check` reports drift |
 
@@ -68,7 +70,7 @@ Keep it that way; it is the only reason paths with spaces or non-ASCII work.
 pnpm install          # also runs the build (the `prepare` script)
 pnpm build            # lib/index.js, lib/client.js, lib/monaco-editor.worker.js
 pnpm typecheck        # tsc --noEmit; must stay clean
-pnpm test             # swimlane model + host actions + file-icon cascade
+pnpm test             # swimlane model + host actions + file-icon cascade + theme colours
 ```
 
 Install into a profile and activate:
@@ -159,6 +161,33 @@ on every click.
 `host/api.ts` serves from `lib/monaco-editor.worker.js`. Only the editor worker exists: the bundle
 imports `edcore.main` plus the basic languages, deliberately **not** `editor.main`, because the
 TypeScript/JSON/CSS/HTML language services would each demand a worker of their own.
+
+### Monaco's theme data is not CSS
+
+A Monaco theme's `colors` map is not a stylesheet, and the difference is load-bearing. The two ids that
+carry the editor's own default foreground and background are lifted out of it and pushed into the
+**token colour** table (`StandaloneTheme.tokenTheme`), and that table validates every value with
+`/^#?([0-9A-Fa-f]{6})([0-9A-Fa-f]{2})?$/`, throwing `Illegal value for token color: …` for anything else
+(`ColorMap.getId`, `vs/editor/common/languages/supports/tokenization.ts`). The *rest* go through
+`Color.fromHex`, which silently answers `Color.red` for a value it cannot read — so a bad colour is
+either a hard throw or an editor painted red, depending on which id it lands on.
+
+The plugin reads the DeepSeek Harness alias tokens off the live page, where a colour is a colour: the
+light theme's `--dsw-alias-bg-base` is the three-digit `#fff`. That reached `editor.background`, the
+theme threw the first time a diff was created, and because the theme is built inside the diff body's
+mount effect the slot runtime dropped the entry — so the diff tab came up **completely blank**: no
+header, no failure message, no pane, just a tab and one console error. The dark theme's `#151517` is six
+digits, which is why this was a light-mode-only bug and why it survived so long.
+
+VS Code never meets that edge because its theme data arrives from validated JSON and is flattened on the
+way in by `normalizeColor` (`vs/workbench/services/themes/common/colorThemeData.ts`), which expands the
+shorthand, keeps six or eight digits, and drops a colour it cannot read. `src/client/themeColor.ts`
+does that flattening here, and `tests/theme-color.test.mjs` pins it.
+
+So: **every CSS colour goes through `toThemeColor` before it enters a theme**, a new literal included. A
+three-digit literal throws in *both* schemes and is caught on the next run; a three-digit *token* only
+throws in the scheme that defines it that way, which is how a blank diff pane shipped in one theme and
+looked perfect in the other.
 
 ### git details that cost real time
 
@@ -365,7 +394,8 @@ node tools/drive.mjs 'http://127.0.0.1:3099/?token=<token>' tools/steps/open-pan
 `tools/drive.mjs` prints the step report on stdout and **every page console error and exception** on
 stderr, exiting non-zero if there were any. A clean run prints no events section — treat any event as a
 failure, and remember that errors can be leftovers from the page that was already open, so re-run once
-before believing them.
+before believing them. A step that *throws* still gets them printed, which is usually the diagnosis: the
+blank diff pane was one console error and nothing else.
 
 `tools/steps/open-panel.mjs` is a worked example (it reaches a session, reveals the right Sidebar, opens
 the Source Control tab, and reports the panel). Copy it for a new check. Two things it encodes:
@@ -425,6 +455,48 @@ response *and* what the remote holds afterwards. Reach for it when the question 
 rather than the argv — request shape, response shape, and the failure modes a client can only report as
 a status code (see the empty-200 entry in §4).
 
+`tools/steps/diff-pane.mjs` is the fifth, and it exists because the diff pane has one failure mode that
+looks like nothing at all: the theme is built inside the effect that creates the editor, so a colour
+Monaco refuses throws while the body *mounts*, the slot runtime drops the entry, and the tab comes up
+blank — no header, no failure message, no editor, and one console error as the only evidence. It asserts
+the five things that blank pane failed: the body rendered, the header names a comparison, the editor
+produced view lines with text, the editor's computed background is the page's own
+`--dsw-alias-bg-base`, and the editor laid out two side-by-side surfaces. It reports the scheme it ran
+in, because every colour it asserts is the scheme's.
+
+Two things it deliberately does *not* assert, both learned the hard way in one run. The added and
+removed line decorations (`.line-insert`/`.line-delete`) are painted for the **rendered** lines only, so
+counting them measures where the change sits in whichever file the run opened — a change below the fold
+reports zero in a pane that is working perfectly. And the diff is only ever as interesting as the
+repository it is pointed at, which is why nothing here asserts *what* changed.
+
+### Both colour schemes
+
+The colour scheme changes behaviour here, not just paint (see the theme-data entry in §4), and the
+preference is one durable document — `~/.dsh/settings.yaml` — shared by every profile and *watched* by
+every running server. So "run that check in the other scheme" cannot be done by editing it: the user's
+own client would flip with it. Point a whole DSH home at a temp directory instead:
+
+```powershell
+# Junction the parts that must be shared; copy the parts that must differ.
+$temp = Join-Path $env:TEMP 'dsh-scm-dark'
+New-Item -ItemType Directory $temp -Force | Out-Null
+foreach ($name in 'profiles','sessions','storages','attachments','skills') {
+  $from = Join-Path $env:USERPROFILE ".dsh\$name"
+  if (Test-Path $from) { New-Item -ItemType Junction -Path (Join-Path $temp $name) -Target $from | Out-Null }
+}
+Copy-Item "$env:USERPROFILE\.dsh\.credentials.yaml" $temp
+(Get-Content "$env:USERPROFILE\.dsh\settings.yaml" -Raw) -replace 'preference: light', 'preference: dark' |
+  Set-Content (Join-Path $temp 'settings.yaml')
+
+$env:DSH_HOME = $temp
+dsh --profile web --port 3099 --no-open     # this server is dark; the user's is untouched
+```
+
+`DSH_HOME` is what the home resolver reads. Two things the temp home must have or the run cannot start:
+`sessions`, or there is no session to open, and `profiles`, or the plugin is not installed in the
+profile. Delete the temp home when the run is over (§6).
+
 ### Fixtures
 
 For anything that writes to git, build a throwaway repository; never run mutating actions against a
@@ -451,7 +523,8 @@ guessed; the port was right each time.
 4. `dsh --profile web --dump-config` still composes the `source-control` row.
 5. A browser run against a throwaway server with **no page events**, exercising whatever you changed —
    plus a screenshot for anything visual.
-6. The verification server and Chrome are stopped, and any fixture repository is removed.
+6. The verification server and Chrome are stopped, and any fixture repository — and any isolated
+   `DSH_HOME` a second colour scheme needed — is removed.
 
 Referenced screenshots live in `docs/` and are updated from real runs.
 
