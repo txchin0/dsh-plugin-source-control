@@ -36,7 +36,15 @@ async function unwrap<T>(response: Response): Promise<T> {
     | (T & { error?: string })
     | undefined
   if (body === undefined) {
-    throw new SourceControlError(`The Source Control host returned HTTP ${response.status}.`, 'http')
+    // Naming the status alone is useless here: the status is usually 200 and the
+    // problem is that there was no JSON body at all, which is what a host half
+    // older than this page looks like — it does not know the action being asked
+    // for, so it has nothing to answer with.
+    throw new SourceControlError(
+      `The Source Control host answered HTTP ${response.status} without a JSON body. ` +
+        'Its host half is probably an older build than this panel — restart the dsh server.',
+      'http',
+    )
   }
   if (typeof body.error === 'string') throw new SourceControlError(body.error, body.error)
   if (!response.ok) {

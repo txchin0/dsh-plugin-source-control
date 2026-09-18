@@ -270,6 +270,31 @@ One divergence, knowingly: VS Code skips the push of a sync when the remote is r
 before a destructive sync (`git.confirmSync`); this half can do neither, and `git.rebaseWhenSync` is not
 implemented either — a sync merges.
 
+### An unknown action must never answer an empty `200`
+
+The two halves are loaded at different times: the **Host** bundle at boot, the **client** at page load
+through the module HMR revision. So a reloaded page routinely runs *newer* code than the server it is
+talking to, and the first thing that looks like is a panel asking for an action the host has never
+heard of.
+
+That used to be invisible. `runAction`'s `switch` had no `default`, so an unknown action fell off the
+end and returned `undefined`; the route passed that to `JSON.stringify`, which returns `undefined`, and
+`res.end(undefined)` wrote a **zero-length body with `content-type: application/json` and status 200**.
+A client can only report that as `The Source Control host returned HTTP 200.` — a message that names the
+one thing that is fine and hides the one thing that is wrong. This is exactly what "Sync Changes did not
+push, I get HTTP 200" was: the sync commit's panel talking to a server started before it.
+
+Three defences now, and all three are load-bearing:
+
+- `runAction` has a `default` that returns `{ ok: false, output: 'Unknown Source Control action: …' }`,
+  so the panel prints the disagreement and the remedy instead of a status code.
+- `sendJson` writes `JSON.stringify(value) ?? 'null'`, so no route can end a JSON response empty.
+- `unwrap` (`src/client/api.ts`) says the body was not JSON and that the host half is probably older,
+  rather than repeating the status.
+
+`tests/actions.test.mjs` covers the unknown action; `tools/probe-actions.mjs` reproduces the whole path
+against a running server, which is how the empty `200` was first pinned down.
+
 ---
 
 ## 5. Verifying a change
@@ -351,6 +376,12 @@ face of the button — Continue, Publish Branch, Sync Changes, Commit — can be
 each click is *recorded* rather than run. That is how "Sync Changes asks for `sync`" is asserted without
 committing or pushing anything in the repository the session happens to be on. Anything that must prove
 the git effect itself belongs in `tests/actions.test.mjs`, against a throwaway repository.
+
+`tools/probe-actions.mjs <url-with-token>` is the same idea one layer up: it posts the real requests to a
+running server's `/source-control/api/action`, against a fixture with a bare remote, and prints the
+response *and* what the remote holds afterwards. Reach for it when the question is about the route
+rather than the argv — request shape, response shape, and the failure modes a client can only report as
+a status code (see the empty-200 entry in §4).
 
 ### Fixtures
 

@@ -237,5 +237,20 @@ export async function runAction(
       return sync(git, root)
     case 'fetch':
       return combine([await git.run(root, ['fetch', '--all', '--prune'])])
+    default:
+      // Unreachable from this build, but reachable from a *newer* panel talking to
+      // it: a Host half loaded at boot keeps running until the server restarts, so
+      // this is what a client that knows an action the host does not asks for.
+      // Answering with a failure rather than falling off the end is the whole
+      // point — an action with no case used to return `undefined`, which the route
+      // serialised into an empty `200`, and the panel reported that as
+      // "The Source Control host returned HTTP 200."
+      return {
+        ok: false,
+        command: `git ${String(request.action)}`,
+        output:
+          `Unknown Source Control action: ${String(request.action)}. ` +
+          'The plugin host half is probably an older build than the panel — restart the server.',
+      }
   }
 }

@@ -37,7 +37,10 @@ function sendJson(res: HostResponse, status: number, value: unknown): void {
   res.statusCode = status
   res.setHeader('content-type', 'application/json; charset=utf-8')
   res.setHeader('cache-control', 'no-store')
-  res.end(JSON.stringify(value))
+  // `JSON.stringify(undefined)` is `undefined`, and `res.end(undefined)` writes an
+  // empty body with a JSON content type — which a client can only report as a bare
+  // status code. Anything that cannot be serialised is answered as `null` instead.
+  res.end(JSON.stringify(value) ?? 'null')
 }
 
 /** Collect a request body, refusing anything past the cap. */

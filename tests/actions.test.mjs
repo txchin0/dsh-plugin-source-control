@@ -180,6 +180,18 @@ test('commit and push runs both, in that order', async () => {
   assert.equal(commands[1], 'push origin main:main')
 })
 
+test('an action this build does not know fails, and names itself', async () => {
+  // The Host half is loaded at boot and the panel is not, so a newer panel can ask
+  // for an action this build has never heard of. Falling off the switch returned
+  // `undefined`, which the route serialised into an empty 200 the panel could only
+  // report as "The Source Control host returned HTTP 200."
+  const git = recorder()
+  const result = await runAction(git, noFs, '/repo', { cwd: '/repo', action: 'teleport' })
+  assert.equal(result.ok, false)
+  assert.match(result.output, /Unknown Source Control action: teleport/)
+  assert.deepEqual(effects(git), [], 'an unknown action must not run anything')
+})
+
 /** Real git, for the fixture cases: the same shape as `GitRunner`. */
 function realRunner() {
   return {

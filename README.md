@@ -43,7 +43,10 @@ mounts on the next `dsh --profile web` start. Verify the composed tree with:
 dsh --profile web --dump-config | grep -A4 source-control
 ```
 
-The Host half is loaded at startup, so a restart (not just a page reload) is what activates it.
+The Host half is loaded at startup, so a restart (not just a page reload) is what activates it. A page
+reload on its own moves only the panel, and the two halves then disagree about what the other knows:
+the panel will say so plainly — `Unknown Source Control action: sync. The plugin host half is probably an
+older build than the panel — restart the server.`
 
 ## Configuration
 
