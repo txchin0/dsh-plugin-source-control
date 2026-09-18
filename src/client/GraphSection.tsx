@@ -1,5 +1,6 @@
 import * as React from 'react'
 import type { ScmCommit, ScmCommitFile, ScmHistory } from '../shared/protocol.ts'
+import { FileIcon } from './FileIcon.tsx'
 import {
   HISTORY_ITEM_BASE_REF_COLOR,
   HISTORY_ITEM_REF_COLOR,
@@ -248,7 +249,7 @@ export function GraphSection({
                     }}
                   >
                     <span className="dsh-scm-commit-file-gutter" />
-                    <i className="codicon codicon-file dsh-scm-row-icon" />
+                    <FileIcon path={file.path} />
                     <span className="dsh-scm-label">
                       <span className="dsh-scm-name">{file.name}</span>
                       {file.dir !== '' ? <span className="dsh-scm-dir">{file.dir}</span> : null}

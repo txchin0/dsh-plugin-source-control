@@ -82,9 +82,21 @@ button puts them.
 
 **Changes** follows VS Code's git provider: `Merge Changes`, `Staged Changes`, `Changes`, and (under
 `untrackedChanges: separate`) `Untracked Changes`. A file changed on both sides appears once per side,
-exactly as VS Code lists it. Rows show the file name, the dimmed directory, and the status letter in
-VS Code's own git decoration colours — `M` modified, `A` added, `D` deleted (struck through), `R`
-renamed, `C` copied, `U` untracked, `T` type changed, `!` conflicted.
+exactly as VS Code lists it. Rows show the file's icon, its name, the dimmed directory, and the status
+letter in VS Code's own git decoration colours — `M` modified, `A` added, `D` deleted (struck through),
+`R` renamed, `C` copied, `U` untracked, `T` type changed, `!` conflicted.
+
+The file icons are **lifted from VS Code**, not approximated: they are the Seti theme VS Code ships as
+its default (`vs-seti`, the value of `FILE_ICON_THEME` in its theme service), so a `.ts` file, a
+`README.md`, a `Makefile` and a `.gitignore` each carry the icon VS Code gives them, in the theme's own
+colours for both schemes. `tools/import-file-icons.mjs` copies the theme and its font out of a VS Code
+checkout and regenerates the language table beside them, so a VS Code bump is one command. The
+resolution is ported too, and that is the part that matters: there is no extension lookup table, because
+VS Code decides which icon a file gets by *emitting CSS and letting specificity choose* —
+`getIconClasses` hands the row every class its path produces, and the rule with the most classes wins.
+A name beats the longest extension beats the language, which is why `README.md` shows the theme's readme
+icon rather than its Markdown one. `tests/fileicons.test.mjs` resolves that cascade for real, rule by
+rule, rather than asserting class lists.
 
 **Actions.** Per file: Open Changes, Discard Changes, Stage Changes, Unstage Changes, Add to
 `.gitignore` for untracked files. Per group: Stage All, Unstage All, Discard All. Per pane: Refresh and
@@ -179,7 +191,8 @@ Two decisions are worth knowing:
 - **Renames read as two rows.** The commit file list is read with `--no-renames`, so a rename shows as
   a deletion plus an addition; each half still opens a correct diff.
 - **A single repository per session**, resolved from the session's working directory.
-- **List view only.** VS Code's tree view, its sort keys, and its file-icon themes are not implemented.
+- **List view only.** VS Code's tree view and its sort keys are not implemented, so folder rows — and
+  with them the folder associations a file icon theme may declare — never appear. Seti declares none.
 - **No repository row.** VS Code only draws one with more than one repository (or
   `scm.alwaysShowRepositories`), and this panel has exactly one repository per session; the branch and
   the ahead/behind counts are shown where VS Code shows them instead.
@@ -191,4 +204,7 @@ Two decisions are worth knowing:
 ## Licence
 
 MIT. Monaco is MIT (Microsoft); the codicon font it and this plugin use is MIT
-([`@vscode/codicons`](https://github.com/microsoft/vscode-codicons)).
+([`@vscode/codicons`](https://github.com/microsoft/vscode-codicons)). The file icons are Seti, lifted
+from VS Code's `theme-seti` extension — MIT (Microsoft), with the glyphs MIT from
+[seti-ui](https://github.com/jesseweed/seti-ui) (© 2014 Jesse Weed). Both notices are in
+[`assets/fileicons/NOTICE`](assets/fileicons/NOTICE).

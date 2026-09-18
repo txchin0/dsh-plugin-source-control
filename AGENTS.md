@@ -45,14 +45,20 @@ Keep it that way; it is the only reason paths with spaces or non-ASCII work.
 | `src/client/SourceControlBody.tsx` | The panel: the two panes, their headers, the commit box, the resource groups |
 | `src/client/GraphSection.tsx` | The Graph view, driving the ported renderer |
 | `src/client/graph.ts` | **Ported from VS Code** — swimlane model + SVG renderer. Do not re-derive. |
+| `src/client/fileIconTheme.ts` | **Ported from VS Code** — file icon theme to stylesheet. Do not re-derive. |
+| `src/client/fileIcons.ts` | **Ported from VS Code** — `getIconClasses`, plus the language table |
+| `src/client/FileIcon.tsx` | The icon element both row kinds render |
 | `src/client/DiffBody.tsx` | The Monaco diff pane |
 | `src/client/monaco.ts` | Monaco, the Harness-derived theme, worker wiring |
 | `src/client/scm.css` | All styling: the ported pane-view container *and* the ported graph rules |
 | `src/shared/protocol.ts`, `routes.ts` | The wire contract both halves compile against |
+| `assets/fileicons/` | The lifted Seti theme, its font, the language table, and `NOTICE` |
 | `build.mjs` | esbuild: host bundle, client bundle + envelope, Monaco worker |
 | `tests/graph.test.mjs` | Swimlane-model tests |
+| `tests/fileicons.test.mjs` | File-icon cascade tests |
 | `tests/actions.test.mjs` | Host action tests: recorded argv, plus a throwaway repository with a bare remote |
 | `tools/drive.mjs` | CDP browser-verification harness (§5) |
+| `tools/import-file-icons.mjs` | Re-lifts the Seti theme from a VS Code checkout; `--check` reports drift |
 
 ---
 
@@ -62,7 +68,7 @@ Keep it that way; it is the only reason paths with spaces or non-ASCII work.
 pnpm install          # also runs the build (the `prepare` script)
 pnpm build            # lib/index.js, lib/client.js, lib/monaco-editor.worker.js
 pnpm typecheck        # tsc --noEmit; must stay clean
-pnpm test             # swimlane model + host action tests
+pnpm test             # swimlane model + host actions + file-icon cascade
 ```
 
 Install into a profile and activate:
@@ -210,6 +216,42 @@ A known original wart, reproduced deliberately: the middle circle of an incoming
 colour and no CSS fill rule, so it computes to SVG's default `fill: rgb(0,0,0)`. It is invisible on a
 dark theme and a black dot on a light one. Fixing it is a one-line CSS rule — but it is a divergence
 from the original, so make that call knowingly.
+
+### The file icons are **ported** too — the cascade *is* the resolution
+
+`src/client/fileIconTheme.ts` ports `fileIconThemeData.ts`'s `processIconThemeDocument`, and
+`src/client/fileIcons.ts` ports `getIconClasses.ts`. There is deliberately no extension → icon table:
+VS Code picks an icon by emitting one rule per association and letting **class counts** decide, so the
+row must be handed *every* class its path produces and the browser must be left to choose. Two
+consequences, both load-bearing:
+
+- **Returning a winning icon means re-deriving the precedence**, and the precedence is not the obvious
+  one. A `fileNames` rule carries two classes more than a language rule and one more than an extension
+  rule; a multi-dot extension (`spec.ts`) carries one more than its own tail (`ts`). That is why
+  `README.md` shows the theme's *readme* icon and not Markdown's, and why `foo.spec.ts` is not `foo.ts`.
+- **Selectors are escaped with the CSSOM algorithm**, and the escapes are not cosmetic: `spec.ts`
+  becomes `.spec\.ts-ext-file-icon`, `h++` becomes `.h\+\+-ext-file-icon`, and an extension starting
+  with a digit becomes `.\33 ds-ext-file-icon` — a hex escape whose terminator is a *space*. Anything
+  that splits a selector on `.` or on a space mis-reads those; that is how `tests/fileicons.test.mjs`
+  first failed, and the test now parses escapes for real.
+
+The light scheme is handled the way VS Code handles `.vs`: the light rules carry one more simple
+selector — `.dsh-scm[data-scheme='light'].show-file-icons` against `.dsh-scm.show-file-icons` — so both
+sets match in a light theme and the light one wins on specificity. **Do not "fix" that by excluding the
+dark rules**; equal-specificity ties are settled by document order, and VS Code relies on that too.
+
+The rules only apply inside a `.show-file-icons` ancestor, which is VS Code's own opt-in for a container
+that wants file icons; `SourceControlBody` puts it on the panel root, and `src/client/scm.css` carries
+the icon box from `iconlabel.css` (16px glyph, 22px tall, 6px of padding after it — which is the whole
+of the space before the label, so the row has no `gap` of its own).
+
+`node tools/import-file-icons.mjs <vscode-checkout>` re-lifts the theme, its font and the language table;
+`--check` reports drift without writing. The language table exists because for Seti that leg is
+load-bearing rather than a fallback — its `fileExtensions` has no entry for `ts`, `js`, `css` or `json`.
+VS Code resolves those through its language registry; the plugin ships a generated table of what the
+built-in extensions declare and matches it the way `getAssociationByPath` does (an exact name first,
+then the longest extension). It reads the path only, never the file, so the `firstLine` associations a
+shebang would satisfy do not apply — the one knowingly unported leg.
 
 ### The container is **ported** too — and its collapse rule is the whole point
 
@@ -391,7 +433,9 @@ esbuild and importing it in Node, which is how the swimlane model is tested with
 
 The swimlane model is the one piece whose correctness is invisible — a wrong lane still draws
 *something* — so it is covered by `pnpm test` against linear, merged, diverged, in-step and empty
-histories.
+histories. The file icons are the same shape of problem for the same reason: a wrong icon still draws
+*something*, so `tests/fileicons.test.mjs` resolves the generated cascade for real instead of asserting
+class lists.
 
 **When a test fails, check the expectation against the VS Code source before touching the
 implementation.** Three of the original cases failed against correct code because the expectations were
@@ -422,7 +466,8 @@ Referenced screenshots live in `docs/` and are updated from real runs.
   panel draws no repository row: VS Code only renders one when more than one repository is visible (or
   `scm.alwaysShowRepositories` is on), and the branch and ahead/behind counts live in the commit box's
   placeholder and on the action button instead.
-- **List view only** — VS Code's tree view, sort keys and file-icon themes are not implemented.
+- **List view only** — VS Code's tree view, sort keys and its `folder` icon associations are not
+  implemented. The *file* icons are, lifted from VS Code's default Seti theme (see §4).
 - **No file watching**: the Changes view polls every four seconds while visible; the Graph is read on
   mount, on demand, and after every write.
 - **`Incoming Changes` depends on the upstream being loaded.** The host names the upstream as a second

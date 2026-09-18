@@ -10,6 +10,7 @@ import {
   PANEL_KIND,
 } from '../shared/routes.ts'
 import { DiffBody } from './DiffBody.tsx'
+import { fileIconsStylesheet } from './fileIcons.ts'
 import type { OpenDiffRequest } from './SourceControlBody.tsx'
 import { SourceControlBody } from './SourceControlBody.tsx'
 import { DiffTitle, SourceControlTitle } from './titles.tsx'
@@ -17,11 +18,12 @@ import { DiffTitle, SourceControlTitle } from './titles.tsx'
 /**
  * The stylesheet installer the client bundle wraps around this module.
  *
- * `build.mjs` emits the bundled CSS as a string and provides this symbol, so
- * the stylesheet is owned by the same effect that owns everything else and
- * leaves with the plugin.
+ * `build.mjs` emits the bundled CSS as a string and provides this symbol. It
+ * takes the file icon theme's rules as an argument because those are generated
+ * from the lifted theme at runtime, and appends them to the same element so one
+ * effect owns every style the plugin installs, and they all leave with it.
  */
-declare const __dshInstallStyles: (() => () => void) | undefined
+declare const __dshInstallStyles: ((extra?: string) => () => void) | undefined
 
 /** Client services this plugin cannot work without. */
 export const inject = ['slots', 'sidebarRightTabs', 'sidebarRight', 'theme']
@@ -158,8 +160,12 @@ function createDiffOpener(ctx: ClientContext): (request: OpenDiffRequest) => voi
  * @param ctx - the client context.
  */
 export function apply(ctx: ClientContext): void {
-  if (typeof __dshInstallStyles === 'function') {
-    ctx.effect(() => __dshInstallStyles(), 'source-control: stylesheet')
+  const installStyles = __dshInstallStyles
+  if (typeof installStyles === 'function') {
+    // The file icon theme's rules are generated from the lifted Seti theme and
+    // ride the plugin's own stylesheet, so there is one thing to install and
+    // one thing to tear down.
+    ctx.effect(() => installStyles(fileIconsStylesheet()), 'source-control: stylesheet')
   }
 
   const openDiff = createDiffOpener(ctx)

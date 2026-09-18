@@ -564,6 +564,8 @@
 .dsh-scm-commit-file-gutter {
   flex: none;
   width: 12px;
+  /* The row has no gap of its own; see `.dsh-scm-row`. */
+  margin-right: 4px;
 }
 
 .dsh-scm-commit-file--state {
@@ -639,7 +641,10 @@
 .dsh-scm-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  /* No gap: the icon box carries VS Code's own 6px of trailing padding, which
+   * is the whole of the space between a file icon and its label there. The
+   * actions and the count bring their own margin instead. */
+  gap: 0;
   height: 22px;
   padding-left: 11px;
   padding-right: 12px;
@@ -655,12 +660,44 @@
   background: var(--dsh-scm-selected);
 }
 
+/* The row has no gap of its own; see `.dsh-scm-row`. */
+.dsh-scm-row .dsh-scm-actions {
+  margin-left: 4px;
+}
+
+/*
+ * The file icon box, ported from `iconlabel.css`'s `.monaco-icon-label::before`:
+ * a 16px wide glyph in a 22px tall box with 6px of padding after it, so the
+ * label starts 22px in — which is where VS Code puts it too.
+ *
+ * No `font-size` here, deliberately. The theme's own rule sets
+ * `.file-icon::before { font-size: 150% }`, and 150% of what it inherits is the
+ * whole point: Seti's glyphs are drawn a size and a half the row's text (13px,
+ * from `.dsh-scm`), and a size set on this element would become their baseline
+ * instead of the row's.
+ */
 .dsh-scm-row-icon {
   flex: none;
+  display: inline-block;
   width: 16px;
-  text-align: center;
-  font-size: 14px;
-  opacity: 0.9;
+  height: 22px;
+  padding-right: 6px;
+  box-sizing: content-box;
+}
+
+.dsh-scm-row-icon::before {
+  display: inline-block;
+  width: 16px;
+  height: 22px;
+  line-height: inherit;
+  /* A theme may use an image instead of a glyph; these are the metrics
+   * `iconlabel.css` gives that form. */
+  background-size: 16px;
+  background-position: left center;
+  background-repeat: no-repeat;
+  vertical-align: top;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .dsh-scm-label {

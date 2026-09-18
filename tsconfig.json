@@ -12,6 +12,7 @@
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "moduleDetection": "force",
+    "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
     "rewriteRelativeImportExtensions": true,
     "noEmit": true

@@ -17,7 +17,7 @@
   "scripts": {
     "build": "node build.mjs",
     "prepare": "node build.mjs",
-    "test": "node tests/graph.test.mjs && node tests/actions.test.mjs",
+    "test": "node tests/graph.test.mjs && node tests/actions.test.mjs && node tests/fileicons.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dsh": {

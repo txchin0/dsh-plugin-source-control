@@ -2,6 +2,7 @@ import * as React from 'react'
 import type { ScmActionRequest, ScmCommit, ScmCommitFile, ScmGroup, ScmHistory, ScmResource, ScmStatus } from '../shared/protocol.ts'
 import type { DiffNavigation } from '../shared/routes.ts'
 import { fetchCommitFiles, fetchHistory, fetchStatus, postAction, SourceControlError } from './api.ts'
+import { FileIcon } from './FileIcon.tsx'
 import { GraphSection } from './GraphSection.tsx'
 import { Menu, MenuAnchor, type MenuItem } from './Menu.tsx'
 
@@ -202,7 +203,7 @@ function ResourceRow({
         }
       }}
     >
-      <i className="codicon codicon-file dsh-scm-row-icon" />
+      <FileIcon path={resource.path} />
       <span className="dsh-scm-label">
         <span className="dsh-scm-name">{resource.name}</span>
         {resource.dir !== '' ? <span className="dsh-scm-dir">{resource.dir}</span> : null}
@@ -812,7 +813,7 @@ export function SourceControlBody(props: SourceControlBodyProps): React.ReactEle
   const expandedShare = (folded.changes ? 0 : ratio) + (folded.graph ? 0 : 1 - ratio)
 
   return (
-    <div className="dsh-scm" data-scheme={schemeAttribute}>
+    <div className="dsh-scm show-file-icons" data-scheme={schemeAttribute}>
       <div className="dsh-scm-panes" ref={panesRef}>
         {/*
           Two panes, exactly as VS Code's SCM view container holds them: the

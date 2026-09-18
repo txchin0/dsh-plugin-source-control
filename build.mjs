@@ -87,11 +87,11 @@ const clientBundle = `window.__ModuleLoader__.load({
 		var exports = module.exports;
 		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 		var __dshStyle = null;
-		function __dshInstallStyles() {
+		function __dshInstallStyles(extra) {
 			if (__dshStyle !== null) return function () {};
 			__dshStyle = document.createElement("style");
 			__dshStyle.setAttribute("data-dsh-plugin", ${JSON.stringify(packageId)});
-			__dshStyle.textContent = ${JSON.stringify(clientCss)};
+			__dshStyle.textContent = ${JSON.stringify(clientCss)} + (extra || "");
 			document.head.appendChild(__dshStyle);
 			return function () {
 				if (__dshStyle !== null && __dshStyle.parentNode !== null) __dshStyle.parentNode.removeChild(__dshStyle);
