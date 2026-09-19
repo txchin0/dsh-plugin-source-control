@@ -155,6 +155,30 @@ click re-point the diff in place, and it is also what keeps the unmount path out
 If you ever make the address per-file, you reintroduce a tab-per-file pile-up and unmount a `DiffBody`
 on every click.
 
+### The diff overview is Monaco's, and it costs 30px of a narrow pane
+
+`DiffBody`'s `renderOverviewRuler: true` is what draws the scroll indicator down the right edge: two
+15px lanes — removed ranges on the left, inserted ones on the right — with the visible portion of the
+document drawn over both as a slider. It is Monaco's own `OverviewRulerFeature`, not something this
+plugin paints, and it is the reason `monaco.ts` carries `diffEditorOverview.insertedForeground`,
+`diffEditorOverview.removedForeground` and the `scrollbarSlider.*` triple: without the first two the
+lanes fall back to `diffEditor.insertedTextBackground` at double alpha, and without the third the
+slider has no colour at all. Those ids were in the theme before the ruler was ever switched on — they
+are dead data the moment `renderOverviewRuler` goes back to `false`.
+
+Two consequences worth knowing before touching the pane's geometry:
+
+- **The strip is reserved, not floated.** Monaco lays the two editors out in `rootWidth - 30`, so the
+  ruler cannot be shown without taking 30px from both sides. In this plugin's column that is a real
+  fraction of each editor, and the lanes are 15px each whatever `scrollbar.verticalScrollbarSize` says.
+- **`monaco-diff-editor.vs/.vs-dark .diffOverview { background: … }` never matches here.** Standalone
+  Monaco puts the theme class on the inner `.monaco-editor` (`view.js`), while the diff root is only
+  `monaco-diff-editor side-by-side`, so the strip has no tint of its own and reads as the pane
+  background. That is cosmetic and matches the shipped bundle; do not "fix" it by inventing a colour.
+
+`tools/steps/diff-pane.mjs` asserts the lanes *and* counts painted pixels inside them, because a ruler
+that is mounted and empty looks exactly like one that works until you scroll.
+
 ### Monaco needs its worker from the plugin's own route
 
 `monaco.ts` sets `MonacoEnvironment.getWorkerUrl` to `/source-control/monaco/editor.worker.js`, which
@@ -462,7 +486,11 @@ blank — no header, no failure message, no editor, and one console error as the
 the five things that blank pane failed: the body rendered, the header names a comparison, the editor
 produced view lines with text, the editor's computed background is the page's own
 `--dsw-alias-bg-base`, and the editor laid out two side-by-side surfaces. It reports the scheme it ran
-in, because every colour it asserts is the scheme's.
+in, because every colour it asserts is the scheme's. Four more cover the diff overview (§4): the strip
+is flush with the right edge of the diff root, it holds one 15px lane per side with the removed one on
+the left, the lanes have **pixels** in them, and those pixels come back red-dominant on the left and
+green-dominant on the right — read out of the canvases, so a ruler that is mounted and empty fails, and
+so does one whose two lanes took the other's colour.
 
 Two things it deliberately does *not* assert, both learned the hard way in one run. The added and
 removed line decorations (`.line-insert`/`.line-delete`) are painted for the **rendered** lines only, so

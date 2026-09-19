@@ -21,7 +21,10 @@
  *   - it laid out two side-by-side surfaces;
  *   - its computed background is the page's own `--dsw-alias-bg-base`, which is
  *     what proves the theme's colours survived the trip from a CSS token into
- *     Monaco's theme data.
+ *     Monaco's theme data;
+ *   - the diff overview is a strip down the right edge with a lane per side and
+ *     pixels painted in them, because "the change is visible in the ruler" is a
+ *     readback of a canvas, not the presence of one.
  *
  * Nothing is written to the repository — the diff pane is read-only.
  *
@@ -181,6 +184,50 @@ export default async function run(driver) {
       .map((node) => node.getBoundingClientRect())
       .filter((box) => box.width > 0 && box.height > 0)
     const first = document.querySelector('.monaco-diff-editor .monaco-editor')
+    // The diff overview — the two lanes that say where the changes are. A lane
+    // that exists but never painted is the failure worth catching, so the
+    // pixels are counted rather than the element: the ruler is a canvas, and
+    // "a canvas is present" is true of an empty one. The colour of what was
+    // painted is read too, because the two lanes are the theme's removed and
+    // inserted colours and nothing in the DOM says which lane got which. The
+    // pixels are read from a copy, so Monaco's own canvas is never a readback
+    // target; only the marks are in there — the viewport slider is a separate
+    // element outside both canvases.
+    const overview = document.querySelector('.monaco-diff-editor .diffOverview')
+    const root = document.querySelector('.monaco-diff-editor')
+    const lanes = [...document.querySelectorAll('.monaco-diff-editor .diffOverview canvas')].map((canvas) => {
+      const box = canvas.getBoundingClientRect()
+      const copy = document.createElement('canvas')
+      copy.width = canvas.width
+      copy.height = canvas.height
+      const context = copy.getContext('2d', { willReadFrequently: true })
+      context.drawImage(canvas, 0, 0)
+      const data = copy.width === 0 || copy.height === 0
+        ? []
+        : context.getImageData(0, 0, copy.width, copy.height).data
+      let painted = 0
+      let red = 0
+      let green = 0
+      let blue = 0
+      for (let offset = 0; offset < data.length; offset += 4) {
+        if (data[offset + 3] === 0) continue
+        painted += 1
+        red += data[offset]
+        green += data[offset + 1]
+        blue += data[offset + 2]
+      }
+      return {
+        className: canvas.className,
+        left: Math.round(box.left),
+        right: Math.round(box.right),
+        width: Math.round(box.width),
+        height: Math.round(box.height),
+        painted,
+        // The mean of an empty lane is not a colour, so it reports as null
+        // rather than as three zeros that read like black.
+        mean: painted === 0 ? null : [Math.round(red / painted), Math.round(green / painted), Math.round(blue / painted)],
+      }
+    })
     return {
       body: document.querySelector('.dsh-scm-diff') !== null,
       header: (document.querySelector('.dsh-scm-diff-paths') || {}).innerText ?? null,
@@ -191,11 +238,20 @@ export default async function run(driver) {
       background: first === null ? null : getComputedStyle(first).backgroundColor,
       expectedBackground,
       foreground: first === null ? null : getComputedStyle(first).color,
+      overview: overview === null ? null : {
+        left: Math.round(overview.getBoundingClientRect().left),
+        right: Math.round(overview.getBoundingClientRect().right),
+        width: Math.round(overview.getBoundingClientRect().width),
+        height: Math.round(overview.getBoundingClientRect().height),
+      },
+      editorRight: root === null ? null : Math.round(root.getBoundingClientRect().right),
+      editorHeight: root === null ? null : Math.round(root.getBoundingClientRect().height),
+      lanes,
     }
   })()`
 
   /** Read the pane once it has settled; a pane that never renders reports as empty. */
-  const EMPTY = { body: false, header: null, mounted: false, lineCount: 0, readable: 0, surfaces: [], background: null, expectedBackground: null, foreground: null }
+  const EMPTY = { body: false, header: null, mounted: false, lineCount: 0, readable: 0, surfaces: [], background: null, expectedBackground: null, foreground: null, overview: null, editorRight: null, editorHeight: null, lanes: [] }
   const pane =
     (await step('render the diff pane', async () => {
       await waitFor('the diff body to render', `document.querySelector('.dsh-scm-diff') !== null`, 10000)
@@ -243,6 +299,58 @@ export default async function run(driver) {
     'the editor is a side-by-side diff of two laid-out surfaces',
     () => pane.surfaces.length === 2 && pane.surfaces[0].height === pane.surfaces[1].height,
     () => `the diff editor laid out ${JSON.stringify(pane.surfaces)}`,
+  )
+  // The diff overview: the scroll indicator that says where in the file the
+  // changes are. It is a separate part of the widget, laid out against the right
+  // edge of the diff root and *outside* both editors, so it is asserted by
+  // geometry as well as by existence: a ruler that exists but is zero-sized, or
+  // sits under the scrollbar, is not the thing that was asked for.
+  await check(
+    'the diff overview is a strip down the right edge of the diff',
+    () =>
+      pane.overview !== null &&
+      pane.overview.right === pane.editorRight &&
+      pane.overview.height === pane.editorHeight &&
+      pane.overview.width >= 30,
+    () =>
+      `the diff overview is ${JSON.stringify(pane.overview)} against a diff root ending at ${pane.editorRight}, ${pane.editorHeight} tall`,
+  )
+  await check(
+    'the diff overview has one lane per side, removed left of inserted',
+    () =>
+      pane.overview !== null &&
+      pane.lanes.length === 2 &&
+      pane.lanes[0].className.includes('original') &&
+      pane.lanes[1].className.includes('modified') &&
+      pane.lanes[0].width === 15 &&
+      pane.lanes[1].width === 15 &&
+      pane.lanes[0].left === pane.overview.left &&
+      pane.lanes[1].left === pane.lanes[0].right &&
+      pane.lanes[0].height === pane.overview.height,
+    () => `the diff overview holds ${JSON.stringify(pane.lanes)}`,
+  )
+  // The whole point of the feature, and the one thing a mounted ruler does not
+  // imply: the lanes have something *painted* in them. This is the pixel read,
+  // and it is deliberately not an assertion about *what* changed — that is a
+  // property of whichever file this run happened to open.
+  await check(
+    'the diff overview marks the changes',
+    () => pane.lanes.reduce((total, lane) => total + lane.painted, 0) > 0,
+    () => `every lane came back empty: ${JSON.stringify(pane.lanes)}`,
+  )
+  // …and that each lane holds *its* colour. The removed and inserted ids are
+  // `#ff000080` and `#9bb95580` in `monaco.ts`, so the left lane has to come
+  // back red-dominant and the right one green-dominant; a lane painted the
+  // other colour, or left at the SVG default of black, is wrong in a way
+  // "painted > 0" cannot see. A hue test rather than an equality against the
+  // hex, because the marks are drawn at 50% alpha over whatever is behind them.
+  const dominant = (lane, channel) =>
+    lane.mean !== null && lane.mean[channel] > Math.max(...lane.mean.filter((_, index) => index !== channel))
+  await check(
+    'the removed lane is red and the inserted lane is green',
+    () => pane.lanes.length === 2 && dominant(pane.lanes[0], 0) && dominant(pane.lanes[1], 1),
+    () =>
+      `the lanes read ${JSON.stringify(pane.lanes.map((lane) => lane.mean))} where removed is red and inserted is green`,
   )
 
   await step('screenshot the diff pane', async () => {

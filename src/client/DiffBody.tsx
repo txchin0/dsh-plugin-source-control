@@ -26,7 +26,15 @@ const EDITOR_OPTIONS: monaco.editor.IStandaloneDiffEditorConstructionOptions = {
   renderSideBySide: true,
   useInlineViewWhenSpaceIsLimited: false,
   automaticLayout: true,
-  renderOverviewRuler: false,
+  // VS Code's diff overview: two 15px lanes down the right edge of the pane,
+  // the removed one left of the inserted one, with the viewport drawn over
+  // both. It is what says *where* in the file the changes are once the file is
+  // longer than the pane — the ruler mirrors the whole document, so a change
+  // below the fold is visible without scrolling to it. The lanes take their
+  // colours from `diffEditorOverview.insertedForeground` /
+  // `diffEditorOverview.removedForeground` and the viewport slider from the
+  // `scrollbarSlider.*` pair, all of which `monaco.ts` already defines.
+  renderOverviewRuler: true,
   renderIndicators: true,
   ignoreTrimWhitespace: false,
   scrollBeyondLastLine: false,

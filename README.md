@@ -143,6 +143,11 @@ against the commit for a file opened from the Graph. It is a real Monaco diff ed
 by side, with the plugin's theme derived from the DeepSeek Harness alias tokens. Roughly 90 languages
 are tokenised through Monaco's basic-languages set.
 
+Down the right edge of the diff is Monaco's **diff overview**: a lane of removed ranges and a lane of
+inserted ones, with the visible portion of the file drawn over both as a slider. It maps the whole
+document onto the height of the pane, so a change that is hundreds of lines below the fold still shows
+up where it is — the same scroll indicator VS Code's own diff editors have.
+
 Every diff is recorded at **one** address, so clicking another file re-points the diff that is already
 on screen instead of stacking a tab per file — the preview behaviour VS Code's diff editors have. One
 diff tab, one Monaco instance, re-navigated in place.
